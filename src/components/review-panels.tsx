@@ -1,10 +1,10 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import { useState, type FormEvent } from "react";
 import {
-  ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, ChartColumnIncreasing, Check, ChevronRight, CircleAlert,
-  ClipboardCheck, FileText, GitCompareArrows, LoaderCircle, ScanLine, Sparkles, UsersRound,
+  ArrowDownLeft, ArrowRight, Check, ChevronRight, CircleAlert, FileText, GitCompareArrows, LoaderCircle, ScanLine,
 } from "lucide-react";
 import { numberLabel, percent, groupLabels, scopeLabel, type AnalysisScope, type AttendanceRecord, type Report, type ReportGroup } from "@/lib/attendance";
 import { promptExamples, type AnalysisRun, type AnalysisStep } from "@/lib/analysis-run";
@@ -35,7 +35,7 @@ export function AnalysisComposer({ question, setQuestion, analyze, running, useR
   return (
     <section className="composer card" aria-labelledby="composer-title">
       <div className="composer-heading">
-        <span className="composer-icon"><Sparkles size={21} strokeWidth={1.8} /></span>
+        <Image className="composer-icon" src="/images/review-pencil.webp" width={36} height={36} alt="" unoptimized />
         <h2 id="composer-title">复盘助手</h2>
         <label className="rules-toggle">
           <input type="checkbox" checked={useRules} onChange={(event) => setUseRules(event.target.checked)} disabled={running} />
@@ -55,7 +55,7 @@ export function AnalysisComposer({ question, setQuestion, analyze, running, useR
       <div className="composer-footer">
         <div className="prompt-options" aria-label="推荐问题">
           {promptExamples.map((item) => <button key={item.label} type="button" className="prompt-chip" onClick={() => analyze(item.question)} disabled={running}>
-            {item.label}<ArrowUpRight size={13} />
+            {item.label}
           </button>)}
         </div>
         {running && <span className="running-state" role="status"><LoaderCircle size={15} className="spinning" />正在分析</span>}
@@ -109,16 +109,16 @@ export function FilterBar({ scope, rows, change, reset }: {
 export function SummaryCards({ report }: { report: Report }) {
   const { totals } = report;
   const tiles = [
-    { icon: UsersRound, tone: "green", name: "报名人次", value: numberLabel(totals.registered), unit: "人次", caption: `${totals.events} 场活动` },
-    { icon: ClipboardCheck, tone: "blue", name: "已记录到场", value: numberLabel(totals.attended), unit: "人", caption: `${totals.rowCount - totals.missing} / ${totals.rowCount} 条已记录` },
-    { icon: ChartColumnIncreasing, tone: "lavender", name: "到场率", value: percent(totals.rate), unit: "", caption: `有效报名 ${numberLabel(totals.tracked)} 人` },
-    { icon: ScanLine, tone: "amber", name: "签到覆盖率", value: percent(totals.coverage), unit: "", caption: totals.missing ? `${totals.missing} 条记录待补录` : null },
+    { name: "报名人次", value: numberLabel(totals.registered), unit: "人次", caption: `${totals.events} 场活动` },
+    { name: "已记录到场", value: numberLabel(totals.attended), unit: "人次", caption: `${totals.rowCount - totals.missing} / ${totals.rowCount} 条已记录` },
+    { name: "到场率", value: percent(totals.rate), caption: `有效报名 ${numberLabel(totals.tracked)} 人次` },
+    { name: "签到覆盖率", value: percent(totals.coverage), caption: totals.missing ? `${totals.missing} 条记录待补录` : null },
   ];
 
-  return <div className="summary-grid">
-    {tiles.map(({ icon: Icon, tone, name, value, unit, caption }) => (
-      <section className="card stat-card" key={name} aria-label={name}>
-        <div className="stat-heading"><span className={`tile-icon ${tone}`}><Icon size={17} strokeWidth={1.85} /></span><h2>{name}</h2></div>
+  return <div className="card summary-grid">
+    {tiles.map(({ name, value, unit, caption }) => (
+      <section className="stat-card" key={name} aria-label={name}>
+        <h2>{name}</h2>
         <div className="stat-value">{value}{unit && <span>{unit}</span>}</div>
         {caption && <span className="stat-caption">{caption}</span>}
       </section>
@@ -135,14 +135,14 @@ export function Overview({ report, setGrouping, evidence }: {
   return (
     <section className="card overview" aria-labelledby="overview-title">
       <div className="card-heading">
-        <div className="heading-line"><BarChart3 size={18} /><h2 id="overview-title">报名与到场</h2></div>
+        <h2 id="overview-title">报名与到场</h2>
         <div className="segmented" role="group" aria-label="显示指标">
           <button type="button" aria-pressed={metric === "count"} onClick={() => setMetric("count")}>人数</button>
           <button type="button" aria-pressed={metric === "rate"} onClick={() => setMetric("rate")}>到场率</button>
         </div>
       </div>
       {report.groups.length > 0 ? <AttendanceChart groups={report.groups} metric={metric} evidence={evidence} /> :
-        <div className="chart-canvas empty-chart"><BarChart3 size={28} /><span>当前范围暂无数据</span></div>}
+        <div className="chart-canvas empty-chart">当前范围暂无数据</div>}
       <div className="chart-footer">
         <div className="legend">
           {metric === "count" && <span><i className="legend-swatch light" />报名人数</span>}
@@ -177,7 +177,7 @@ export function InsightPanel({ report, rule, run, evidence, edit, openRule }: {
   return (
     <section className="card insights" aria-labelledby="insights-title">
       <div className="card-heading">
-        <div><div className="heading-line"><ClipboardCheck size={18} /><h2 id="insights-title">复盘结论</h2></div></div>
+        <h2 id="insights-title">复盘结论</h2>
         <span className={`pill ${emphasizeMissing ? "warning" : noResult ? "neutral" : "success"}`}>
           {emphasizeMissing ? "待补录" : noResult ? "数据不足" : "可比较"}
         </span>

@@ -1,8 +1,10 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownToLine, BookOpen, CalendarDays, ChartNoAxesColumnIncreasing, ChartNoAxesCombined, ChevronRight, FileSpreadsheet, ScanLine, Upload, X } from "lucide-react";
+import { ArrowDownToLine, BookOpen, CalendarDays, ChartNoAxesCombined, FolderOpen, NotebookPen, ScanLine, Upload, X } from "lucide-react";
+import clubMark from "@/app/icon.png";
 import {
   defaultCriteria, defaultScope, makeReport, recordKey, scopeLabel, scopeSchema,
   type AnalysisScope, type AttendanceRecord, type ReportGroup,
@@ -22,9 +24,9 @@ const VisualDashboard = dynamic(() => import("./visual-dashboard"), {
 });
 
 const views = [
-  { id: "review", label: "活动复盘", icon: ChartNoAxesColumnIncreasing },
+  { id: "review", label: "活动复盘", icon: NotebookPen },
   { id: "visual", label: "可视化大屏", icon: ChartNoAxesCombined },
-  { id: "data", label: "活动台账", icon: FileSpreadsheet },
+  { id: "data", label: "活动台账", icon: FolderOpen },
   { id: "rules", label: "规则库", icon: BookOpen },
 ] as const;
 
@@ -214,15 +216,14 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
     <>
       <div className="app-shell" data-view={view}>
         <aside className="sidebar">
-          <button type="button" className="brand" onClick={() => selectView("review")}>
-            <span className="brand-mark" aria-hidden="true"><ChartNoAxesColumnIncreasing size={22} strokeWidth={2.3} /></span>
+          <button type="button" className="brand" aria-label="返回活动复盘" onClick={() => selectView("review")}>
+            <Image className="brand-mark" src={clubMark} width={40} height={40} alt="" unoptimized />
             <strong className="brand-name">社团复盘</strong>
           </button>
           <nav className="sidebar-nav" aria-label="工作区">
             {views.map(({ id, label, icon: Icon }) => <button type="button" key={id} aria-current={view === id ? "page" : undefined}
               className={`nav-link ${view === id ? "nav-active" : ""}`} onClick={() => selectView(id)}>
-              <Icon size={19} strokeWidth={1.8} /><span>{label}</span>
-              {view === id && <ChevronRight className="nav-arrow" size={16} />}
+              <Icon size={18} strokeWidth={1.65} aria-hidden="true" /><span>{label}</span>
             </button>)}
           </nav>
         </aside>

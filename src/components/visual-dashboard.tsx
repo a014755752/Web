@@ -1,14 +1,14 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import { Activity, ArrowUpRight, CalendarDays, ChartNoAxesCombined, ClipboardCheck, GitFork, Grid2X2, ScanLine, UsersRound } from "lucide-react";
+import { ArrowUpRight, CalendarDays } from "lucide-react";
 import { groupLabels, numberLabel, percent, scopeLabel, type Report, type ReportGroup } from "@/lib/attendance";
 import { makeVisualReport } from "@/lib/visual-data";
 import { FlowChart, SampleChart, sampleColors, TimelineChart, type HeatmapMetric } from "./visual-charts";
 import "./visual-dashboard.css";
 
 function ChartEmpty({ children }: { children: ReactNode }) {
-  return <div className="viz-empty"><Activity size={23} /><p>{children}</p></div>;
+  return <div className="viz-empty">{children}</div>;
 }
 
 export default function VisualDashboard({ report, evidence, children }: {
@@ -24,10 +24,10 @@ export default function VisualDashboard({ report, evidence, children }: {
   const emphasis = priority ?? incomplete;
   const chartHeight = 235 + Math.max(0, flow.nodes.length - 8) * 14;
   const tiles = [
-    { icon: UsersRound, name: "报名人次", value: numberLabel(report.totals.registered), tail: `${report.totals.events} 场活动`, tone: "blue" },
-    { icon: ClipboardCheck, name: "已记录到场", value: numberLabel(report.totals.attended), tail: `${report.totals.rowCount - report.totals.missing} 条签到记录`, tone: "mint" },
-    { icon: ChartNoAxesCombined, name: "到场率", value: percent(report.totals.rate), tail: `有效报名 ${numberLabel(report.totals.tracked)} 人`, tone: "violet" },
-    { icon: ScanLine, name: "签到覆盖率", value: percent(report.totals.coverage), tail: report.totals.missing ? `${report.totals.missing} 条记录待补录` : null, tone: "amber" },
+    { name: "报名人次", value: numberLabel(report.totals.registered), tail: `${report.totals.events} 场活动` },
+    { name: "已记录到场", value: numberLabel(report.totals.attended), tail: `${report.totals.rowCount - report.totals.missing} 条签到记录` },
+    { name: "到场率", value: percent(report.totals.rate), tail: `有效报名 ${numberLabel(report.totals.tracked)} 人次` },
+    { name: "签到覆盖率", value: percent(report.totals.coverage), tail: report.totals.missing ? `${report.totals.missing} 条记录待补录` : null },
   ];
 
   return (
@@ -46,9 +46,9 @@ export default function VisualDashboard({ report, evidence, children }: {
       <div className="viz-controls">{children}</div>
 
       <div className="viz-stats">
-        {tiles.map(({ icon: Icon, name, value, tail, tone }) => (
-          <section className={`viz-stat viz-stat-${tone}`} key={name} aria-label={name}>
-            <div><span className="viz-stat-icon"><Icon size={17} /></span><h2>{name}</h2></div>
+        {tiles.map(({ name, value, tail }) => (
+          <section className="viz-stat" key={name} aria-label={name}>
+            <h2>{name}</h2>
             <strong>{value}</strong>
             {tail && <p>{tail}</p>}
           </section>
@@ -58,7 +58,7 @@ export default function VisualDashboard({ report, evidence, children }: {
       <div className="viz-chart-grid">
         <section className="viz-panel viz-flow" aria-labelledby="flow-title">
           <div className="viz-panel-heading">
-            <h2 id="flow-title"><GitFork size={18} />报名与签到流向</h2>
+            <h2 id="flow-title">报名与签到流向</h2>
             <p>全部报名 <span>→</span> 宣传渠道 <span>→</span> 签到结果</p>
           </div>
           <div className="viz-chart-frame" style={{ height: chartHeight }}>
@@ -73,7 +73,7 @@ export default function VisualDashboard({ report, evidence, children }: {
 
         <section className="viz-panel viz-scatter" aria-labelledby="scatter-title">
           <div className="viz-panel-heading">
-            <h2 id="scatter-title"><Activity size={18} />样本与到场率</h2>
+            <h2 id="scatter-title">样本与到场率</h2>
             <p>横轴为有效样本人数，虚线为当前门槛</p>
           </div>
           <div className="viz-chart-frame" style={{ height: chartHeight }}>
@@ -92,7 +92,6 @@ export default function VisualDashboard({ report, evidence, children }: {
 
       {emphasis && (
         <div className="viz-insight">
-          <span className="viz-insight-icon"><Activity size={17} /></span>
           <p>{priority
             ? <><strong>{priorities.length > 1 ? "并列优先复盘" : "优先复盘"}</strong> {priorities.map(({ label }) => label).join("、")} · 到场率 {percent(priority.rate)}</>
             : <><strong>签到覆盖不足</strong> {incomplete?.label}当前覆盖率为 {percent(incomplete?.coverage ?? null)}，可查看待补录记录。</>}</p>
@@ -102,7 +101,7 @@ export default function VisualDashboard({ report, evidence, children }: {
 
       <section className="viz-panel viz-timeline" aria-labelledby="timeline-title">
         <div className="viz-panel-heading viz-heading-split">
-          <div><h2 id="timeline-title"><Grid2X2 size={17} />渠道时段热力图</h2>
+          <div><h2 id="timeline-title">渠道时段热力图</h2>
             <p>{heatmap.interval === "段" ? "按时段汇总" : `按${heatmap.interval}汇总`} · {heatmap.periods.length} 个时段 · 点击单元格查看原始记录</p>
           </div>
           <div className="viz-switch" role="group" aria-label="热力图指标">

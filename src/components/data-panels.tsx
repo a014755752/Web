@@ -142,11 +142,10 @@ export function RulesWorkspace() {
     <div className="rules-grid">
       {clubRules.map((rule) => (
         <article key={rule.id} className="card rule-card" id={`rule-${rule.id}`}>
-          <div className="rule-heading">
-            <span className="tile-icon"><FileText size={19} /></span>
+          <header className="rule-heading">
+            <h2>{rule.title}</h2>
             <span className={`pill ${rule.through ? "neutral" : "success"}`}>{rule.through ? "历史版本" : rule.version}</span>
-          </div>
-          <h2>{rule.title}</h2>
+          </header>
           <p className="muted">{rule.category ?? "通用"} · {rule.from}{rule.through ? ` 至 ${rule.through}` : " 起"}</p>
           <p>{rule.text}</p>
           {rule.criteria && <div className="rule-metrics">
