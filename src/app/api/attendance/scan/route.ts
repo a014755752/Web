@@ -1,17 +1,10 @@
 import { generateText, Output } from "ai";
-import { z } from "zod";
+import { scanResultSchema } from "@/lib/attendance-scan";
 import { createModel, modelConfig } from "@/lib/server/model";
 
 export const runtime = "nodejs";
 
 const maxImageSize = 4 * 1024 * 1024;
-const scanSchema = z.object({
-  eventId: z.string().trim().min(1).max(80).nullable(),
-  channel: z.string().trim().min(1).max(80).nullable(),
-  attended: z.number().int().min(0).max(1_000_000).nullable(),
-  scope: z.enum(["channel", "event", "unclear"]),
-});
-
 function isRecognizedImage(bytes: Uint8Array, type: string) {
   if (type === "image/png") {
     const magic = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -55,7 +48,7 @@ export async function POST(request: Request) {
       maxRetries: 0,
       abortSignal: AbortSignal.any([request.signal, AbortSignal.timeout(30_000)]),
     });
-    const result = scanSchema.safeParse(output);
+    const result = scanResultSchema.safeParse(output);
     if (!result.success) return Response.json({ error: "模型返回的字段无法核对，请手动补录。" }, { status: 422 });
     return Response.json({ result: result.data }, { headers: { "Cache-Control": "no-store" } });
   } catch {

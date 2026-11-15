@@ -14,6 +14,7 @@ import { AttendanceDialog } from "./attendance-dialog";
 import { CsvDialog, downloadCsv, EvidenceDialog, RecordsTable, RulesWorkspace, type Attachment, type Attachments } from "./data-panels";
 import { Modal } from "./modal";
 import { AnalysisComposer, FilterBar, GroupTable, InsightPanel, Overview, PrintSummary, ScenarioPanel, SummaryCards } from "./review-panels";
+import { RuleComparison } from "./rule-comparison";
 
 const views = [
   { id: "review", label: "复盘工作台", icon: ChartNoAxesColumnIncreasing },
@@ -239,7 +240,7 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
                 {!scopeValid && <p className="form-error" role="alert">起始日期须早于或等于结束日期。</p>}
                 <SummaryCards report={report} />
                 <div className="analysis-grid">
-                  <Overview report={report} setGrouping={(groupBy) => changeScope({ ...scope, groupBy })} />
+                  <Overview report={report} setGrouping={(groupBy) => changeScope({ ...scope, groupBy })} evidence={openEvidence} />
                   <InsightPanel report={report} rule={rule} run={run} evidence={openEvidence} edit={showScan} openRule={openRule} />
                 </div>
                 <GroupTable report={report} evidence={openEvidence} />
@@ -264,6 +265,7 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
             {view === "rules" && (
               <>
                 <div className="page-heading"><div><h1>规则库</h1><div className="page-meta"><BookOpen size={16} />模拟社团内部资料 · {clubRules.length} 份</div></div></div>
+                <RuleComparison modelConfigured={modelConfigured} />
                 <RulesWorkspace />
               </>
             )}

@@ -3,13 +3,22 @@
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { ReportGroup } from "@/lib/attendance";
 
-export default function AttendanceChart({ groups, metric }: { groups: ReportGroup[]; metric: "count" | "rate" }) {
+export default function AttendanceChart({ groups, metric, evidence }: {
+  groups: ReportGroup[];
+  metric: "count" | "rate";
+  evidence: (group: ReportGroup) => void;
+}) {
   const data = groups.map((group) => ({
     label: group.label,
     registered: group.registered,
     attended: group.tracked > 0 ? group.attended : null,
     rate: group.rate === null ? null : Math.round(group.rate * 1000) / 10,
   }));
+
+  function openBar(_: unknown, index: number) {
+    const group = groups[index];
+    if (group) evidence(group);
+  }
 
   return (
     <div className="chart-canvas" role="img" aria-label={metric === "count" ? "各组报名与已知到场人数柱状图" : "各组到场率柱状图"}>
@@ -34,11 +43,11 @@ export default function AttendanceChart({ groups, metric }: { groups: ReportGrou
           />
           {metric === "count" ? (
             <>
-              <Bar dataKey="registered" name="报名人数" fill="#c2ded0" radius={[5, 5, 0, 0]} maxBarSize={54} isAnimationActive={false} />
-              <Bar dataKey="attended" name="已记录到场" fill="#247353" radius={[5, 5, 0, 0]} maxBarSize={54} isAnimationActive={false} />
+              <Bar dataKey="registered" name="报名人数" fill="#c2ded0" radius={[5, 5, 0, 0]} maxBarSize={54} isAnimationActive={false} onClick={openBar} />
+              <Bar dataKey="attended" name="已记录到场" fill="#247353" radius={[5, 5, 0, 0]} maxBarSize={54} isAnimationActive={false} onClick={openBar} />
             </>
           ) : (
-            <Bar dataKey="rate" name="到场率" fill="#247353" radius={[5, 5, 0, 0]} maxBarSize={68} isAnimationActive={false} />
+            <Bar dataKey="rate" name="到场率" fill="#247353" radius={[5, 5, 0, 0]} maxBarSize={68} isAnimationActive={false} onClick={openBar} />
           )}
         </BarChart>
       </ResponsiveContainer>

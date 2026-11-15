@@ -11,6 +11,13 @@ const categoryNames = ["分享会", "招新", "工作坊"] as const;
 const titlePrefixes = ["社团经验交流", "社团见面日", "动手体验课"] as const;
 const channels = ["班群", "公众号", "海报", "社群邀请"] as const;
 
+const recruitment = { eventId: "S02", eventName: "社团见面日 2", date: "2026-09-06", category: "招新" };
+export const ruleComparisonRecords: AttendanceRecord[] = [
+  { ...recruitment, channel: "公众号", registered: 48, attended: 36 },
+  { ...recruitment, channel: "海报", registered: 25, attended: 8 },
+  { ...recruitment, channel: "社群邀请", registered: 36, attended: 21 },
+];
+
 export function semesterRecords(): AttendanceRecord[] {
   let seed = 20261115;
   const random = () => {
@@ -19,6 +26,7 @@ export function semesterRecords(): AttendanceRecord[] {
   };
 
   return Array.from({ length: 25 }, (_, index) => {
+    if (index === 1) return ruleComparisonRecords;
     const type = index % categoryNames.length;
     const event = {
       eventId: `S${String(index + 1).padStart(2, "0")}`,
@@ -29,10 +37,6 @@ export function semesterRecords(): AttendanceRecord[] {
 
     return [0, 1, 2].map((offset) => {
       const channel = channels[(index + offset) % channels.length];
-      if (index === 1) {
-        const [registered, attended] = [[48, 36], [25, 8], [36, 21]][offset];
-        return { ...event, channel, registered, attended };
-      }
       const registered = 8 + Math.floor(random() * 53);
       const attended = (index + offset) % 13 === 6
         ? null

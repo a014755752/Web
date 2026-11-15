@@ -3,15 +3,9 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { FileImage, LoaderCircle, ScanLine, Upload, X } from "lucide-react";
 import { recordKey, type AttendanceRecord } from "@/lib/attendance";
+import { scanResultSchema, type ScanResult } from "@/lib/attendance-scan";
 import type { Attachment } from "./data-panels";
 import { Modal } from "./modal";
-
-type ScanResult = {
-  eventId: string | null;
-  channel: string | null;
-  attended: number | null;
-  scope: "channel" | "event" | "unclear";
-};
 
 const imageLimit = 4 * 1024 * 1024;
 
@@ -53,27 +47,38 @@ export function AttendanceDialog({ rows, initial, canScan, showSample, close, sa
     const url = await imageUrl(file);
     if (request.signal.aborted) return;
     setAttachment({ name: file.name, url });
-    if (!canScan) {
-      setMessage("请对照原图，手动核对目标记录和到场人数。");
-      return;
+    let result: ScanResult | undefined;
+    if (canScan) {
+      try {
+        const form = new FormData();
+        form.set("file", file);
+        const response = await fetch("/api/attendance/scan", { method: "POST", body: form, signal: request.signal });
+        if (response.ok) {
+          const data = await response.json() as { result?: unknown };
+          const parsed = scanResultSchema.safeParse(data.result);
+          if (parsed.success) result = parsed.data;
+        }
+      } catch {
+        request.signal.throwIfAborted();
+      }
     }
-
-    const form = new FormData();
-    form.set("file", file);
-    const response = await fetch("/api/attendance/scan", { method: "POST", body: form, signal: request.signal });
-    const data = await response.json() as { result?: ScanResult; error?: string };
-    if (!response.ok || !data.result) throw new Error(data.error ?? "截图识别失败，可以手动核对。");
+    const method = result ? "视觉模型" : "本地 OCR";
+    if (!result) {
+      const { recognizeAttendance } = await import("@/lib/attendance-ocr");
+      result = await recognizeAttendance(file, rows, request.signal);
+    }
     if (request.signal.aborted) return;
-    const result = data.result;
+
     setReportScope(result.scope);
     const matched = rows.find((item) => item.eventId === result.eventId && item.channel === result.channel);
     setTarget(result.scope === "channel" && matched ? recordKey(matched) : "");
     setValue(result.attended?.toString() ?? "");
-    setMessage(result.scope === "event"
+    const hint = result.scope === "event"
       ? "识别为全场汇总。请上传带宣传渠道的签到截图。"
       : result.attended === null
         ? "到场数不清晰，请对照原图填写。"
-        : "已提取签到信息，请对照原图核对后确认。");
+        : "已提取到场人数，请对照原图核对活动与渠道后确认。";
+    setMessage(`${method} · ${hint}`);
   }
 
   async function load(loadFile: (signal: AbortSignal) => Promise<File>) {
@@ -89,8 +94,8 @@ export function AttendanceDialog({ rows, initial, canScan, showSample, close, sa
     try {
       const file = await loadFile(request.signal);
       if (!request.signal.aborted) await inspect(file, request);
-    } catch (cause) {
-      if (!request.signal.aborted) setError(cause instanceof Error ? cause.message : "读取失败，请重试。");
+    } catch {
+      if (!request.signal.aborted) setError("截图未能识别。可以对照原图手动填写。");
     } finally {
       if (!request.signal.aborted) setBusy(false);
     }
@@ -160,7 +165,7 @@ export function AttendanceDialog({ rows, initial, canScan, showSample, close, sa
             <div className="scan-fields">
               <div className="scan-state" aria-live="polite">
                 {busy ? <LoaderCircle size={16} className="spinning" /> : <ScanLine size={16} />}
-                {busy ? "处理截图中…" : canScan ? "截图识别与核对" : "手动核对"}
+                {busy ? "处理截图中…" : canScan ? "截图识别与核对" : "本地 OCR 识别与核对"}
               </div>
               <label className="field">活动与渠道
                 <select value={target} disabled={busy} onChange={(event) => {

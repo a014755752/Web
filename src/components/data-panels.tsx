@@ -141,6 +141,10 @@ export function EvidenceDialog({ group, rule, criteria, trial, attachments, clos
   close: () => void;
   openRule: (id: string) => void;
 }) {
+  const photos = group.rows.flatMap((row) => {
+    const key = recordKey(row);
+    return attachments[key] ? [{ key, row, file: attachments[key] }] : [];
+  });
   return (
     <Modal title={`${group.label} · 计算依据`} close={close} wide>
       <div className="modal-body evidence-body">
@@ -150,8 +154,19 @@ export function EvidenceDialog({ group, rule, criteria, trial, attachments, clos
         </div>
         <div>
           <h3>原始记录</h3>
-          <RecordsTable rows={group.rows} attachments={attachments} />
+          <RecordsTable rows={group.rows} attachments={{}} />
         </div>
+        {photos.length > 0 && <div>
+          <h3>签到截图</h3>
+          <div className="evidence-photos">
+            {photos.map(({ key, row, file }) => (
+              <figure key={key}>
+                <img src={file.url} alt={`${row.eventName} · ${row.channel}签到原图`} loading="lazy" />
+                <figcaption><strong>{row.eventId} · {row.channel}</strong><a className="link-button" href={file.url} download={file.name}>下载原图</a></figcaption>
+              </figure>
+            ))}
+          </div>
+        </div>}
         <p className="muted">{trial ? "手动试算" : "当前口径"} · 有效样本 ≥ {criteria.minSamples} 人 · 签到覆盖率 ≥ {percent(criteria.minCoverage)}</p>
         {rule && <div className="evidence-rule">
           <FileText size={18} />

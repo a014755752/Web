@@ -4,5 +4,6 @@
 .env*
 node_modules
 output
+public/ocr
 *.tsbuildinfo
 npm-debug.log*

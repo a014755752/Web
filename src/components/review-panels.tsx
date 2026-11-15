@@ -130,21 +130,25 @@ export function SummaryCards({ report }: { report: Report }) {
   </div>;
 }
 
-export function Overview({ report, setGrouping }: { report: Report; setGrouping: (value: AnalysisScope["groupBy"]) => void }) {
+export function Overview({ report, setGrouping, evidence }: {
+  report: Report;
+  setGrouping: (value: AnalysisScope["groupBy"]) => void;
+  evidence: (group: ReportGroup) => void;
+}) {
   const [metric, setMetric] = useState<"count" | "rate">("count");
   return (
     <section className="card overview" aria-labelledby="overview-title">
       <div className="card-heading">
         <div>
           <div className="heading-line"><BarChart3 size={18} /><h2 id="overview-title">报名与到场</h2></div>
-          <p>{report.scope.groupBy === "channel" ? "按宣传渠道汇总" : "按活动类型汇总"} · {report.groups.length} 组</p>
+          <p>{report.scope.groupBy === "channel" ? "按宣传渠道汇总" : "按活动类型汇总"} · {report.groups.length} 组{report.groups.length > 0 && " · 点柱查看依据"}</p>
         </div>
         <div className="segmented" role="group" aria-label="显示指标">
           <button type="button" aria-pressed={metric === "count"} onClick={() => setMetric("count")}>人数</button>
           <button type="button" aria-pressed={metric === "rate"} onClick={() => setMetric("rate")}>到场率</button>
         </div>
       </div>
-      {report.groups.length > 0 ? <AttendanceChart groups={report.groups} metric={metric} /> :
+      {report.groups.length > 0 ? <AttendanceChart groups={report.groups} metric={metric} evidence={evidence} /> :
         <div className="chart-canvas empty-chart"><BarChart3 size={28} /><span>当前范围暂无数据</span></div>}
       <div className="chart-footer">
         <div className="legend">

@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "prepare:ocr": "node scripts/prepare-ocr.mjs",
+    "predev": "npm run prepare:ocr",
     "dev": "next dev",
+    "prebuild": "npm run prepare:ocr",
     "build": "next build",
     "start": "next start",
     "typecheck": "next typegen && tsc --noEmit"
@@ -13,6 +16,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.92",
+    "@tesseract.js-data/chi_sim": "1.0.0",
     "ai": "7.0.173",
     "geist": "^1.4.2",
     "lucide-react": "^0.468.0",
@@ -22,6 +26,7 @@
     "react-dom": "^19.2.0",
     "react-is": "^19.2.0",
     "recharts": "3.10.1",
+    "tesseract.js": "7.0.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {

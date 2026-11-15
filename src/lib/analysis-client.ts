@@ -3,7 +3,7 @@ import type { AnalysisEvent, AnalysisInput, AnalysisRun, AnalysisStep } from "./
 export async function requestAnalysis(
   input: AnalysisInput,
   signal: AbortSignal,
-  onStep: (step: AnalysisStep) => void,
+  onStep?: (step: AnalysisStep) => void,
 ): Promise<AnalysisRun> {
   const response = await fetch("/api/analyze", {
     method: "POST",
@@ -24,7 +24,7 @@ export async function requestAnalysis(
   function consume(line: string) {
     if (!line.trim()) return;
     const event = JSON.parse(line) as AnalysisEvent;
-    if (event.type === "step") onStep(event.step);
+    if (event.type === "step") onStep?.(event.step);
     if (event.type === "result") run = event.run;
     if (event.type === "error") throw new Error(event.message);
   }
