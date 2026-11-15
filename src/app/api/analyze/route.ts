@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { AnalysisEvent } from "@/lib/analysis-run";
 import { recordsSchema, scopeSchema } from "@/lib/attendance";
 import { runActivityAgent } from "@/lib/server/activity-agent";
-import { modelConfig } from "@/lib/server/model";
+import { modelConfig, modelFailure } from "@/lib/server/model";
 
 export const runtime = "nodejs";
 
@@ -47,10 +47,10 @@ export async function POST(request: Request) {
       try {
         const result = await runActivityAgent(parsed.data, config, signal, (step) => emit({ type: "step", step }));
         emit({ type: "result", run: result });
-      } catch {
+      } catch (error) {
         emit({
           type: "error",
-          message: timeout.aborted ? "模型分析超时。" : "模型暂时无法完成分析，请重试或检查模型配置。",
+          message: timeout.aborted ? "模型分析超时。" : modelFailure(error, "模型暂时无法完成分析，请稍后重试。"),
         });
       } finally {
         if (!cancellation.signal.aborted) controller.close();

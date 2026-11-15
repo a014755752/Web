@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-访问 http://localhost:3000。将 `.env.example` 复制为 `.env.local`，填写服务端 `MODEL_API_KEY`。模型地址须与密钥地域匹配。也可配置其他兼容 Chat Completions 和 Embeddings 协议的模型服务，文本模型须支持 Function Calling。模型未配置时，可用本地统计和浏览器 OCR。
+访问 http://localhost:3000。将 `.env.example` 复制为 `.env.local`，填写 `DEEPSEEK_API_KEY`。文本分析和截图识别默认使用 `deepseek-flash`。云端截图识别会把用户选择的图片发给模型服务。模型未配置时，可用本地统计和浏览器 OCR。
 
 ```sh
 docker build -t campus-review .
@@ -28,9 +28,9 @@ docker run --rm -p 127.0.0.1:3000:3000 --env-file .env.local campus-review
 
 ## 架构
 
-Next.js、TypeScript、Recharts、Apache ECharts、Papa Parse 和 IndexedDB。`/api/analyze` 用 AI SDK 调用规则检索、统计和明细工具，流式返回步骤及结果。规则按适用类型及版本筛选，向量不可用时采用关键词检索。`/api/attendance/scan` 调用视觉模型，浏览器也可用本地 OCR 识别清晰的简体中文签到截图。用户确认后回填，再从图表打开对应记录与原图。
+Next.js、TypeScript、Recharts、Apache ECharts、Papa Parse 和 IndexedDB。`/api/analyze` 流式返回规则检索、统计、明细查询和建议选择的进度。规则先按类型和版本筛选，DeepSeek Flash 再从候选资料里做语义匹配，失败时用关键词。建议引用的分组或记录由统计结果校验。`/api/attendance/scan` 识别截图字段，用户核对后回填，可从图表打开对应记录与原图。
 
-参考 [AI SDK](https://ai-sdk.dev/docs/ai-sdk-core/tools-and-tool-calling)、[CSV AI Analyzer](https://github.com/maxgfr/csv-ai-analyzer)、[Receipt Scanner](https://github.com/sarmakska/receipt-scanner) 和 [Tesseract.js](https://github.com/naptha/tesseract.js)。
+参考 [DeepSeek 图像理解](https://api-docs.deepseek.com/zh-cn/guides/vision/)、[AI SDK](https://ai-sdk.dev/docs/ai-sdk-core/tools-and-tool-calling)、[CSV AI Analyzer](https://github.com/maxgfr/csv-ai-analyzer)、[Receipt Scanner](https://github.com/sarmakska/receipt-scanner) 和 [Tesseract.js](https://github.com/naptha/tesseract.js)。
 
 ## 团队
 

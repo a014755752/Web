@@ -6,7 +6,7 @@ import { useState, type FormEvent } from "react";
 import {
   ArrowDownLeft, ArrowRight, Check, ChevronRight, CircleAlert, FileText, GitCompareArrows, LoaderCircle, ScanLine,
 } from "lucide-react";
-import { numberLabel, percent, groupLabels, scopeLabel, type AnalysisScope, type AttendanceRecord, type Report, type ReportGroup } from "@/lib/attendance";
+import { numberLabel, percent, groupLabels, recordKey, scopeLabel, type AnalysisScope, type AttendanceRecord, type Report, type ReportGroup } from "@/lib/attendance";
 import { promptExamples, type AnalysisRun, type AnalysisStep } from "@/lib/analysis-run";
 import type { ClubRule } from "@/lib/rules";
 
@@ -166,11 +166,19 @@ export function InsightPanel({ report, rule, run, evidence, edit, openRule }: {
   edit: (row: AttendanceRecord) => void;
   openRule: (id: string) => void;
 }) {
-  const priority = report.priorities[0];
-  const incomplete = report.groups.find((group) => group.status === "incomplete");
+  const followUp = run?.followUp;
+  const suggestedGroup = followUp && followUp.action !== "fill_checkin"
+    ? report.priorities.find(({ label }) => label === followUp.label) : undefined;
+  const priority = suggestedGroup ?? report.priorities[0];
+  const suggestedRecord = followUp?.action === "fill_checkin"
+    ? report.rows.find((row) => row.attended === null && recordKey(row) === followUp.key) : undefined;
+  const incomplete = report.groups.find((group) => group.status === "incomplete" && (!suggestedRecord || group.rows.includes(suggestedRecord)));
   const mustFill = report.rows.filter((row) => row.attended === null);
-  const missing = incomplete?.rows.find((row) => row.attended === null) ?? mustFill[0];
-  const emphasizeMissing = missing && (run?.focus === "missing" || !priority);
+  const missing = suggestedRecord ?? incomplete?.rows.find((row) => row.attended === null) ?? mustFill[0];
+  const emphasizeMissing = missing && (suggestedRecord || run?.focus === "missing" || !priority);
+  const nextStep = suggestedGroup && (followUp?.action === "inspect_promotion"
+    ? "对照该组各场活动的宣传安排和报名记录。"
+    : "按原始记录核对该组的报名归属和签到。");
   const noResult = !emphasizeMissing && !priority;
   const sources = run?.sources.filter((id) => id !== rule?.id) ?? [];
 
@@ -196,7 +204,9 @@ export function InsightPanel({ report, rule, run, evidence, edit, openRule }: {
           <div><h3>{report.priorities.length > 1 ? "多个分组并列最低" : `优先复盘 ${priority.label}`}</h3>
             <p>{report.priorities.length > 1
               ? `${report.priorities.map((group) => group.label).join("、")}均为 ${percent(priority.rate)}。`
-              : `到场率 ${percent(priority.rate)}，对应 ${priority.attended} 到场 / ${priority.tracked} 有效报名。`}</p></div>
+              : `到场率 ${percent(priority.rate)}，对应 ${priority.attended} 到场 / ${priority.tracked} 有效报名。`}</p>
+            {nextStep && <p className="insight-next">{nextStep}</p>}
+          </div>
         </div>
       ) : (
         <div className="insight-callout subtle">

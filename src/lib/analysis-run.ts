@@ -1,14 +1,19 @@
 import { defaultCriteria, type AnalysisScope, type AttendanceRecord, type Criteria } from "./attendance";
 import { applicableRule, keywordRules } from "./rules";
 
+export type AnalysisFollowUp =
+  | { action: "inspect_promotion" | "verify_signup"; label: string }
+  | { action: "fill_checkin"; key: string };
+
 export type AnalysisRun = {
   mode: "local" | "agent";
   scope: AnalysisScope;
   criteria: Criteria;
   ruleId: string | null;
   sources: string[];
-  retrieval: "vector" | "keyword" | "off";
+  retrieval: "vector" | "semantic" | "keyword" | "off";
   focus: "comparison" | "missing";
+  followUp?: AnalysisFollowUp;
 };
 
 export type AnalysisStep = { name: string; detail: string };

@@ -43,21 +43,24 @@ export function AttendanceDialog({ rows, initial, canScan, close, save }: {
     if (request.signal.aborted) return;
     setAttachment({ name: file.name, url });
     let result: ScanResult | undefined;
+    let method = "本地 OCR";
     if (canScan) {
       try {
         const form = new FormData();
         form.set("file", file);
         const response = await fetch("/api/attendance/scan", { method: "POST", body: form, signal: request.signal });
         if (response.ok) {
-          const data = await response.json() as { result?: unknown };
+          const data = await response.json() as { result?: unknown; model?: string };
           const parsed = scanResultSchema.safeParse(data.result);
-          if (parsed.success) result = parsed.data;
+          if (parsed.success) {
+            result = parsed.data;
+            method = data.model === "deepseek-flash" ? "DeepSeek Flash" : "视觉模型";
+          }
         }
       } catch {
         request.signal.throwIfAborted();
       }
     }
-    const method = result ? "视觉模型" : "本地 OCR";
     if (!result) {
       const { recognizeAttendance } = await import("@/lib/attendance-ocr");
       result = await recognizeAttendance(file, rows, request.signal);
