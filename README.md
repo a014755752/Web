@@ -26,6 +26,8 @@ docker run --rm -p 127.0.0.1:3000:3000 --env-file .env.local campus-review
 
 进入「规则库」，点击「运行对照」。同一场招新活动按默认口径优先复盘海报，应用 30 人门槛后优先复盘社群邀请。
 
+「可视化大屏」使用当前数据与筛选条件，可打开流向、散点和热力图对应的记录。[ECharts 桑基图](https://github.com/apache/echarts-examples/blob/gh-pages/public/examples/ts/sankey-simple.ts)、[散点图](https://github.com/apache/echarts-examples/blob/gh-pages/public/examples/ts/scatter-simple.ts)、[热力图](https://github.com/apache/echarts-examples/blob/gh-pages/public/examples/ts/heatmap-cartesian.ts)
+
 ## 架构
 
 Next.js、TypeScript、Recharts 和 Papa Parse。`/api/analyze` 用 AI SDK 调用规则检索、统计和明细工具，流式返回步骤及结果。规则按适用类型及版本筛选，向量不可用时采用关键词检索。`/api/attendance/scan` 调用视觉模型，浏览器也可用本地 OCR 识别清晰的简体中文签到截图。用户确认后回填，再从图表打开对应记录与原图。

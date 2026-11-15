@@ -1,7 +1,8 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownToLine, BookOpen, CalendarDays, ChartNoAxesColumnIncreasing, ChevronRight, Database, FileSpreadsheet, FlaskConical, Layers3, ScanLine, Upload, X } from "lucide-react";
+import { ArrowDownToLine, BookOpen, CalendarDays, ChartNoAxesColumnIncreasing, ChartNoAxesCombined, ChevronRight, Database, FileSpreadsheet, FlaskConical, Layers3, ScanLine, Upload, X } from "lucide-react";
 import {
   defaultCriteria, defaultScope, makeReport, recordKey, scopeLabel, scopeSchema,
   type AnalysisScope, type AttendanceRecord, type ReportGroup,
@@ -16,8 +17,14 @@ import { Modal } from "./modal";
 import { AnalysisComposer, FilterBar, GroupTable, InsightPanel, Overview, PrintSummary, ScenarioPanel, SummaryCards } from "./review-panels";
 import { RuleComparison } from "./rule-comparison";
 
+const VisualDashboard = dynamic(() => import("./visual-dashboard"), {
+  ssr: false,
+  loading: () => <p className="viz-loading" role="status">正在加载可视化图表…</p>,
+});
+
 const views = [
   { id: "review", label: "复盘工作台", icon: ChartNoAxesColumnIncreasing },
+  { id: "visual", label: "可视化大屏", icon: ChartNoAxesCombined },
   { id: "data", label: "数据管理", icon: Database },
   { id: "rules", label: "规则库", icon: BookOpen },
 ] as const;
@@ -106,7 +113,7 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
     setQuestion("");
     setDialog(null);
     setNotice(`已载入 ${next.rows.length} 条活动记录。`);
-    selectView("review");
+    selectView(view === "visual" ? "visual" : "review");
   }
 
   function showScan(row: AttendanceRecord | null) {
@@ -188,7 +195,7 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
 
   return (
     <>
-      <div className="app-shell">
+      <div className="app-shell" data-view={view}>
         <aside className="sidebar">
           <button type="button" className="brand" onClick={() => selectView("review")}>
             <span className="brand-mark" aria-hidden="true"><ChartNoAxesColumnIncreasing size={22} strokeWidth={2.3} /></span>
@@ -246,6 +253,13 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
                 <GroupTable report={report} evidence={openEvidence} />
                 <ScenarioPanel report={report} trial={trial} change={setTrialMinimum} evidence={openEvidence} />
               </>
+            )}
+
+            {view === "visual" && (
+              <VisualDashboard report={report} source={sourceLabel} evidence={openEvidence}>
+                <FilterBar scope={scope} rows={dataset.rows} change={changeScope} reset={() => changeScope(defaultScope(dataset.rows))} />
+                {!scopeValid && <p className="form-error" role="alert">起始日期须早于或等于结束日期。</p>}
+              </VisualDashboard>
             )}
 
             {view === "data" && (

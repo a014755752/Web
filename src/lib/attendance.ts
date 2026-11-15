@@ -104,6 +104,15 @@ function summarize(rows: AttendanceRecord[]) {
 
 export type GroupStatus = "ready" | "incomplete" | "small" | "empty";
 
+export function makeReportGroup(label: string, rows: AttendanceRecord[], criteria: Criteria) {
+  const summary = summarize(rows);
+  let status: GroupStatus = "ready";
+  if (summary.registered === 0) status = "empty";
+  else if (summary.rate === null || (summary.coverage ?? 0) < criteria.minCoverage) status = "incomplete";
+  else if (summary.tracked < criteria.minSamples) status = "small";
+  return { label, ...summary, status, rows };
+}
+
 export function makeReport(records: AttendanceRecord[], scope: AnalysisScope, criteria: Criteria) {
   const rows = filterRows(records, scope);
   const buckets = new Map<string, AttendanceRecord[]>();
@@ -114,14 +123,8 @@ export function makeReport(records: AttendanceRecord[], scope: AnalysisScope, cr
     buckets.set(key, existing);
   }
 
-  const groups = [...buckets.entries()].map(([label, matching]) => {
-    const summary = summarize(matching);
-    let status: GroupStatus = "ready";
-    if (summary.registered === 0) status = "empty";
-    else if (summary.rate === null || (summary.coverage ?? 0) < criteria.minCoverage) status = "incomplete";
-    else if (summary.tracked < criteria.minSamples) status = "small";
-    return { label, ...summary, status, rows: matching };
-  }).sort((a, b) => b.registered - a.registered || a.label.localeCompare(b.label, "zh-CN"));
+  const groups = [...buckets.entries()].map(([label, matching]) => makeReportGroup(label, matching, criteria))
+    .sort((a, b) => b.registered - a.registered || a.label.localeCompare(b.label, "zh-CN"));
 
   const ranked = groups.filter((group) => group.status === "ready" && group.rate !== null)
     .sort((a, b) => (a.rate ?? 0) - (b.rate ?? 0) || a.label.localeCompare(b.label, "zh-CN"));
