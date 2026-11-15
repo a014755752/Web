@@ -130,14 +130,13 @@ export function AttendanceDialog({ rows, initial, canScan, showSample, close, sa
             <div className="scan-source">
               {attachment ? (
                 <div className="image-preview">
-                  {/* A browser-local upload has no server URL to optimize. */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={attachment.url} alt="签到截图原图" />
                   <button type="button" className="icon-button remove-photo" aria-label="移除截图" disabled={busy} onClick={() => {
                     setAttachment(undefined);
                     setReportScope(null);
                     setMessage("");
                     setError("");
+                    setValue(row?.attended?.toString() ?? "");
                   }}><X size={16} /></button>
                 </div>
               ) : (

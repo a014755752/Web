@@ -29,6 +29,10 @@ export function semesterRecords(): AttendanceRecord[] {
 
     return [0, 1, 2].map((offset) => {
       const channel = channels[(index + offset) % channels.length];
+      if (index === 1) {
+        const [registered, attended] = [[48, 36], [25, 8], [36, 21]][offset];
+        return { ...event, channel, registered, attended };
+      }
       const registered = 8 + Math.floor(random() * 53);
       const attended = (index + offset) % 13 === 6
         ? null

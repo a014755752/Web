@@ -290,7 +290,8 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
         </Modal>
       )}
       {dialog?.type === "scan" && <AttendanceDialog rows={dataset.rows} initial={dialog.initial}
-        canScan={visionConfigured} showSample={dataset.kind === "demo"} close={() => setDialog(null)} save={saveAttendance} />}
+        canScan={visionConfigured} showSample={dataset.kind === "demo" && (!dialog.initial || dialog.initial.eventId === "A02")}
+        close={() => setDialog(null)} save={saveAttendance} />}
       {dialog?.type === "evidence" && <EvidenceDialog group={dialog.group} rule={rule}
         criteria={dialog.trial ? trial.criteria : report.criteria} trial={dialog.trial}
         attachments={attachments} close={() => setDialog(null)} openRule={openRule} />}

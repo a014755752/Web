@@ -25,13 +25,14 @@ export function RecordsTable({ rows, attachments, edit }: {
   attachments: Attachments;
   edit?: (row: AttendanceRecord) => void;
 }) {
+  const showActions = Boolean(edit) || Object.keys(attachments).length > 0;
   return (
     <div className="table-scroll">
       <table className="data-table">
         <thead><tr>
           <th scope="col">活动</th><th scope="col">日期</th><th scope="col">类型</th><th scope="col">渠道</th>
           <th scope="col" className="numeric">报名</th><th scope="col" className="numeric">到场</th>
-          {(edit || Object.keys(attachments).length > 0) && <th scope="col">记录</th>}
+          {showActions && <th scope="col">记录</th>}
         </tr></thead>
         <tbody>
           {rows.map((row) => {
@@ -43,7 +44,7 @@ export function RecordsTable({ rows, attachments, edit }: {
                 <td className="date-cell">{row.date}</td><td>{row.category}</td><td>{row.channel}</td>
                 <td className="numeric">{numberLabel(row.registered)}</td>
                 <td className="numeric">{row.attended === null ? <span className="pill warning">待补录</span> : numberLabel(row.attended)}</td>
-                {(edit || Object.keys(attachments).length > 0) && <td>
+                {showActions && <td>
                   <div className="row-actions">
                     {file && <a href={file.url} download={file.name} className="link-button"><FileImage size={14} />原图</a>}
                     {edit && <button type="button" className="link-button" onClick={() => edit(row)}>
