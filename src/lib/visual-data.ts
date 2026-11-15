@@ -2,6 +2,12 @@ import { makeReport, makeReportGroup, type Criteria, type Report, type ReportGro
 
 const maxChannels = 8;
 const channelColors = ["#65cfff", "#53e0b5", "#ad9dff", "#8bd8f7", "#85dca6", "#e6a4f3", "#c6de76", "#8b9fba"];
+export const sampleColors = {
+  ready: "#62ebba",
+  incomplete: "#f6be78",
+  small: "#96b3ff",
+  empty: "#71889e",
+};
 
 type FlowNode = {
   id: string;

@@ -1,8 +1,8 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { ArrowDownToLine, BookOpen, CalendarDays, ChartNoAxesCombined, FolderOpen, NotebookPen, ScanLine, Upload, X } from "lucide-react";
 import clubMark from "@/app/icon.png";
 import {
@@ -17,11 +17,7 @@ import { readLedger, writeLedger, type Attachment, type WorkspaceLedger } from "
 import { AttendanceDialog } from "./attendance-dialog";
 import { CsvDialog, downloadCsv, EvidenceDialog, RecordsWorkspace, RulesWorkspace } from "./data-panels";
 import { AnalysisComposer, FilterBar, GroupTable, InsightPanel, Overview, PrintSummary, ScenarioPanel, SummaryCards } from "./review-panels";
-
-const VisualDashboard = dynamic(() => import("./visual-dashboard"), {
-  ssr: false,
-  loading: () => <p className="viz-loading" role="status">正在加载可视化图表…</p>,
-});
+import VisualDashboard, { preloadVisualCharts } from "./visual-dashboard";
 
 const views = [
   { id: "review", label: "活动复盘", icon: NotebookPen },
@@ -53,6 +49,8 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
   const [notice, setNotice] = useState("");
   const [ruleAnchor, setRuleAnchor] = useState<string | null>(null);
   const active = useRef<AbortController | null>(null);
+  const navigationId = useRef(0);
+  const navigation = useRef<ViewTransition | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -69,8 +67,12 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
     return () => { disposed = true; };
   }, []);
 
-  useEffect(() => () => active.current?.abort(), []);
-  useEffect(() => {
+  useEffect(() => () => {
+    active.current?.abort();
+    navigationId.current += 1;
+    navigation.current?.skipTransition();
+  }, []);
+  useLayoutEffect(() => {
     if (ruleAnchor && view === "rules") {
       document.getElementById(`rule-${ruleAnchor}`)?.scrollIntoView({ block: "center" });
     }
@@ -106,17 +108,40 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
     setScope(next);
   }
 
+  function transitionTo(next: View, scrollTop = false) {
+    const id = ++navigationId.current;
+    navigation.current?.skipTransition();
+
+    function commit() {
+      if (id !== navigationId.current) return;
+      setView(next);
+      if (scrollTop) window.scrollTo(0, 0);
+    }
+
+    if (next === view || !document.startViewTransition || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      commit();
+      return;
+    }
+
+    const transition = document.startViewTransition(() => flushSync(commit));
+    navigation.current = transition;
+    void transition.ready.catch(() => {});
+    function releaseTransition() {
+      if (navigation.current === transition) navigation.current = null;
+    }
+    void transition.finished.then(releaseTransition, releaseTransition);
+  }
+
   function selectView(next: View) {
     setRuleAnchor(null);
     setNotice("");
-    setView(next);
-    window.scrollTo(0, 0);
+    transitionTo(next, true);
   }
 
   function openRule(id: string) {
     setDialog(null);
-    setView("rules");
     setRuleAnchor(id);
+    transitionTo("rules");
   }
 
   async function saveLedger(next: WorkspaceLedger) {
@@ -159,7 +184,7 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
     setScope(result.scope);
     setRun(result);
     setTrialMinimum(null);
-    setView("review");
+    transitionTo("review");
   }
 
   function applyLocal(input: AnalysisInput) {
@@ -222,7 +247,8 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
           </button>
           <nav className="sidebar-nav" aria-label="工作区">
             {views.map(({ id, label, icon: Icon }) => <button type="button" key={id} aria-current={view === id ? "page" : undefined}
-              className={`nav-link ${view === id ? "nav-active" : ""}`} onClick={() => selectView(id)}>
+              className={`nav-link ${view === id ? "nav-active" : ""}`} onClick={() => selectView(id)}
+              onPointerEnter={id === "visual" ? preloadVisualCharts : undefined} onFocus={id === "visual" ? preloadVisualCharts : undefined}>
               <Icon size={18} strokeWidth={1.65} aria-hidden="true" /><span>{label}</span>
             </button>)}
           </nav>

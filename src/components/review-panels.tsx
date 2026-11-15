@@ -9,10 +9,11 @@ import {
 import { numberLabel, percent, groupLabels, recordKey, scopeLabel, type AnalysisScope, type AttendanceRecord, type Report, type ReportGroup } from "@/lib/attendance";
 import { promptExamples, type AnalysisRun, type AnalysisStep } from "@/lib/analysis-run";
 import type { ClubRule } from "@/lib/rules";
+import { ChartPlaceholder } from "./chart-placeholder";
 
 const AttendanceChart = dynamic(() => import("./attendance-chart"), {
   ssr: false,
-  loading: () => <div className="chart-canvas chart-loading" aria-label="载入图表" />,
+  loading: () => <div className="chart-canvas"><ChartPlaceholder label="正在加载报名与到场图表" /></div>,
 });
 
 export function AnalysisComposer({ question, setQuestion, analyze, running, useRules, setUseRules, stop, error, steps, run }: {

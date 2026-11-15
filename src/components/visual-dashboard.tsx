@@ -1,11 +1,30 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useMemo, useState, type ReactNode } from "react";
 import { ArrowUpRight, CalendarDays } from "lucide-react";
 import { groupLabels, numberLabel, percent, scopeLabel, type Report, type ReportGroup } from "@/lib/attendance";
-import { makeVisualReport } from "@/lib/visual-data";
-import { FlowChart, SampleChart, sampleColors, TimelineChart, type HeatmapMetric } from "./visual-charts";
+import { makeVisualReport, sampleColors } from "@/lib/visual-data";
+import { ChartPlaceholder } from "./chart-placeholder";
+import type { HeatmapMetric } from "./visual-charts";
 import "./visual-dashboard.css";
+
+const FlowChart = dynamic(() => import("./visual-charts").then((module) => module.FlowChart), {
+  ssr: false,
+  loading: () => <ChartPlaceholder label="正在加载报名与签到流向" />,
+});
+const SampleChart = dynamic(() => import("./visual-charts").then((module) => module.SampleChart), {
+  ssr: false,
+  loading: () => <ChartPlaceholder label="正在加载样本与到场率" />,
+});
+const TimelineChart = dynamic(() => import("./visual-charts").then((module) => module.TimelineChart), {
+  ssr: false,
+  loading: () => <ChartPlaceholder label="正在加载渠道时段热力图" />,
+});
+
+export function preloadVisualCharts() {
+  void import("./visual-charts").catch(() => {});
+}
 
 function ChartEmpty({ children }: { children: ReactNode }) {
   return <div className="viz-empty">{children}</div>;

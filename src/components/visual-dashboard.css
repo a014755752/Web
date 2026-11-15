@@ -2,6 +2,7 @@
   --viz-text: #e6f3f9;
   --viz-muted: #9db5c5;
   --viz-border: #29424f;
+  --placeholder-line: var(--viz-border);
   background: #09141e;
   color: var(--viz-text);
   color-scheme: dark;
@@ -83,7 +84,6 @@
 .viz-controls .plain { color: #8eebd1; }
 .viz-controls .plain:hover { color: #b5f8e4; background: #18343c; }
 .viz-controls .form-error { margin-top: 8px; color: #ffbbb0; background: #342832; border-color: #68474d; }
-.viz-loading { padding: 24px; color: var(--viz-muted, #64736a); }
 
 .viz-stats {
   display: grid;

@@ -6,7 +6,7 @@ import { GridComponent, MarkLineComponent, TooltipComponent, VisualMapPiecewiseC
 import { init, use, type ComposeOption, type ECElementEvent, type EChartsType } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { groupLabels, numberLabel, percent, type Criteria, type ReportGroup } from "@/lib/attendance";
-import type { VisualReport } from "@/lib/visual-data";
+import { sampleColors, type VisualReport } from "@/lib/visual-data";
 
 use([SankeyChart, ScatterChart, HeatmapChart, GridComponent, MarkLineComponent, TooltipComponent, VisualMapPiecewiseComponent, CanvasRenderer]);
 
@@ -26,13 +26,6 @@ const axisText = "#a0b9ca";
 const axisLines = "#263b49";
 const chartFont = '"Microsoft YaHei", "PingFang SC", sans-serif';
 const shortNumber = new Intl.NumberFormat("zh-CN", { notation: "compact", maximumFractionDigits: 1 });
-
-export const sampleColors = {
-  ready: "#62ebba",
-  incomplete: "#f6be78",
-  small: "#96b3ff",
-  empty: "#71889e",
-};
 
 function brief(label: string, max = 8) {
   const letters = Array.from(label);
@@ -99,7 +92,7 @@ export function FlowChart({ flow, evidence }: { flow: VisualReport["flow"]; evid
   const { nodes, links } = flow;
   const option = useMemo<ChartOption>(() => ({
     textStyle: { fontFamily: chartFont },
-    animationDuration: 520,
+    animationDuration: 260,
     tooltip: {
       ...tooltip,
       formatter: (params) => {
@@ -174,7 +167,7 @@ export function SampleChart({ groups, criteria, evidence }: { groups: ReportGrou
       axisLabel: { color: axisText, fontSize: 10, formatter: "{value}%" },
       splitLine: { lineStyle: { color: axisLines, type: "dashed" } },
     },
-    animationDuration: 440,
+    animationDuration: 220,
     series: [{
       type: "scatter",
       symbolSize: 15,
@@ -213,7 +206,7 @@ export function TimelineChart({ heatmap, metric, evidence }: { heatmap: VisualRe
       const cell = point ? cells[point.dataIndex] : undefined;
       return cell?.group ? groupTooltip(cell.group) : "本时段无活动记录";
     } },
-    animationDuration: 360,
+    animationDuration: 180,
     xAxis: {
       type: "category", data: periods.map(({ from }) => from), axisTick: { show: false }, axisLine: { show: false },
       axisLabel: { color: axisText, fontSize: 11, formatter: (_value: string, index: number) => periods[index]?.label ?? "" },

@@ -129,7 +129,7 @@ export function AttendanceDialog({ rows, initial, canScan, close, save }: {
 
   return (
     <Modal title="补录签到" close={close} closeDisabled={saving} wide>
-      <form onSubmit={submit}>
+      {(dismiss) => <form onSubmit={submit}>
         <div className="modal-body">
           <div className="scan-grid">
             <div className="scan-source">
@@ -179,10 +179,10 @@ export function AttendanceDialog({ rows, initial, canScan, close, save }: {
           </div>
         </div>
         <div className="modal-actions">
-          <button type="button" className="button secondary" onClick={close} disabled={saving}>取消</button>
+          <button type="button" className="button secondary" onClick={dismiss} disabled={saving}>取消</button>
           <button type="submit" className="button primary" disabled={busy || saving || !target || value === "" || reportScope === "event"}>{saving ? "正在保存…" : "保存签到"}</button>
         </div>
-      </form>
+      </form>}
     </Modal>
   );
 }
