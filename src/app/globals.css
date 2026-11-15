@@ -430,7 +430,6 @@ svg { flex-shrink: 0; vertical-align: middle; }
 .rate-track i { display: block; height: 100%; background: var(--chart-attended); border-radius: 4px; }
 .empty-note { padding: 16px; color: var(--muted); font-size: 13px; }
 .records-card { padding: 15px; }
-.records-filter { width: fit-content; margin-bottom: 12px; }
 
 .scenario-summary { display: flex; align-items: center; gap: 8px; list-style: none; font-weight: 650; cursor: pointer; }
 .scenario-summary::-webkit-details-marker { display: none; }

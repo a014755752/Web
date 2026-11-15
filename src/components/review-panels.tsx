@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import Image from "next/image";
 import { useState, type FormEvent } from "react";
 import {
-  ArrowDownLeft, ArrowRight, Check, ChevronRight, CircleAlert, FileText, GitCompareArrows, LoaderCircle, ScanLine,
+  ArrowDownLeft, ArrowRight, Check, ChevronRight, CircleAlert, FileText, GitCompareArrows, LoaderCircle, ScanLine, X,
 } from "lucide-react";
 import { numberLabel, percent, groupLabels, recordKey, scopeLabel, type AnalysisScope, type AttendanceRecord, type Report, type ReportGroup } from "@/lib/attendance";
 import { promptExamples, type AnalysisRun, type AnalysisStep } from "@/lib/analysis-run";
@@ -81,6 +81,7 @@ export function FilterBar({ scope, rows, change, reset }: {
 }) {
   const categories = [...new Set(rows.map((row) => row.category))];
   const channels = [...new Set(rows.map((row) => row.channel))];
+  const activity = scope.eventId ? rows.find(({ eventId }) => eventId === scope.eventId) : undefined;
 
   return (
     <div className="filter-bar" aria-label="统计筛选">
@@ -102,6 +103,9 @@ export function FilterBar({ scope, rows, change, reset }: {
           {channels.map((item) => <option key={item}>{item}</option>)}
         </select>
       </label>
+      {activity && <button type="button" className="scope-activity" aria-label={`退出 ${activity.eventName} 单场复盘`} onClick={reset}>
+        <span>{activity.eventName}</span><X size={14} />
+      </button>}
       <button type="button" className="button plain reset-filters" onClick={reset}>重置</button>
     </div>
   );
@@ -309,7 +313,7 @@ export function PrintSummary({ report, trial, source, rule }: { report: Report; 
   return (
     <section className="print-report">
       <h1>校园社团活动复盘简报</h1>
-      <p>{source} · {scopeLabel(report.scope)}</p>
+      <p>{source} · {scopeLabel(report.scope)}{report.scope.eventId && report.rows[0] && ` · ${report.rows[0].eventName}`}</p>
       <p>报名 {report.totals.registered} 人 · 已记录到场 {report.totals.attended} 人 · 到场率 {percent(report.totals.rate)} · 签到覆盖 {percent(report.totals.coverage)}</p>
       <p>计算口径：{rule?.title ?? "默认参数"} · 有效样本 ≥ {report.criteria.minSamples} 人 · 覆盖率 ≥ {percent(report.criteria.minCoverage)}。</p>
       <p>优先复盘：{report.priorities.map((group) => `${group.label}（${percent(group.rate)}）`).join("、") || "可比较组不足"}。</p>

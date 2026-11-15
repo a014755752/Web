@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { ArrowDownToLine, BookOpen, CalendarDays, ChartNoAxesCombined, FolderOpen, NotebookPen, ScanLine, Upload, X } from "lucide-react";
+import { ArrowDownToLine, BookOpen, CalendarDays, ChartNoAxesCombined, FolderOpen, NotebookPen, Plus, ScanLine, Upload, X } from "lucide-react";
 import clubMark from "@/app/icon.png";
 import {
   defaultCriteria, defaultScope, makeReport, recordKey, scopeLabel, scopeSchema,
@@ -12,10 +12,12 @@ import {
 import { runLocalAnalysis, type AnalysisInput, type AnalysisRun, type AnalysisStep } from "@/lib/analysis-run";
 import { requestAnalysis } from "@/lib/analysis-client";
 import { initialRecords } from "@/lib/activity-ledger";
+import { activityScope, appendLedgerRows, listActivities, validateLedgerRows, type ActivityFields, type LedgerActivity } from "@/lib/ledger-activities";
 import { applicableRule, clubRules } from "@/lib/rules";
 import { readLedger, writeLedger, type Attachment, type WorkspaceLedger } from "@/lib/workspace-store";
 import { AttendanceDialog } from "./attendance-dialog";
-import { CsvDialog, downloadCsv, EvidenceDialog, RecordsWorkspace, RulesWorkspace } from "./data-panels";
+import { ActivityComparison, ActivityDetail, ActivityEditor, type ActivityEditorMode } from "./activity-panels";
+import { CsvDialog, downloadCsv, EvidenceDialog, RecordsWorkspace, RulesWorkspace, type CsvImportMode } from "./data-panels";
 import { AnalysisComposer, FilterBar, GroupTable, InsightPanel, Overview, PrintSummary, ScenarioPanel, SummaryCards } from "./review-panels";
 import VisualDashboard, { preloadVisualCharts } from "./visual-dashboard";
 
@@ -28,8 +30,11 @@ const views = [
 
 type View = typeof views[number]["id"];
 type Dialog = { type: "csv" } |
-  { type: "scan"; initial: AttendanceRecord | null } |
-  { type: "evidence"; group: ReportGroup; trial: boolean };
+  { type: "scan"; initial: AttendanceRecord | null; eventId?: string } |
+  { type: "evidence"; group: ReportGroup; trial: boolean } |
+  { type: "activity"; eventId: string } |
+  { type: "activity-editor"; mode: ActivityEditorMode; eventId?: string } |
+  { type: "compare"; eventId?: string };
 
 const initialData: WorkspaceLedger = { revision: 0, title: "2026 秋季活动台账", rows: initialRecords, attachments: {} };
 
@@ -82,6 +87,9 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
     ? clubRules.find((entry) => entry.id === run.ruleId) ?? null
     : applicableRule(scope);
   const criteria = run?.criteria ?? rule?.criteria ?? defaultCriteria;
+  const activities = useMemo(() => listActivities(dataset.rows), [dataset.rows]);
+  const dialogEventId = dialog && "eventId" in dialog ? dialog.eventId : undefined;
+  const dialogActivity = dialogEventId ? activities.find(({ eventId }) => eventId === dialogEventId) : undefined;
   const report = useMemo(() => makeReport(dataset.rows, scope, criteria), [dataset.rows, scope, criteria]);
   const trial = useMemo(() => trialMinimum === null || trialMinimum === report.criteria.minSamples
     ? report
@@ -148,21 +156,79 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
     setDataset(storage === "temporary" ? next : await writeLedger(next));
   }
 
-  function confirmChange(message: string) {
-    setDialog(null);
+  function confirmChange(message: string, nextDialog: Dialog | null = null) {
+    setDialog(nextDialog);
     setNotice(storage === "temporary" ? `${message}浏览器存储不可用，刷新前请导出台账。` : message);
   }
 
-  async function replaceDataset(rows: AttendanceRecord[], filename: string) {
-    await saveLedger({ ...dataset, title: filename.replace(/\.csv$/i, "") || "活动台账", rows, attachments: {} });
+  function updateScopeAfterSave(rows: AttendanceRecord[], changed?: ActivityFields) {
     clearAnalysis();
-    setScope(defaultScope(rows));
-    setQuestion("");
-    confirmChange(`已导入 ${rows.length} 条记录。`);
+    if (changed && scope.eventId === changed.eventId) {
+      setScope({ ...scope, from: changed.date, to: changed.date, category: changed.category });
+      return;
+    }
+    const previous = defaultScope(dataset.rows);
+    if (!scope.eventId && scope.from === previous.from && scope.to === previous.to) {
+      const next = defaultScope(rows);
+      setScope({ ...scope, from: next.from, to: next.to });
+    }
   }
 
-  function showScan(row: AttendanceRecord | null) {
-    if (ready) setDialog({ type: "scan", initial: row });
+  async function importDataset(rows: AttendanceRecord[], filename: string, mode: CsvImportMode) {
+    if (mode === "append") {
+      const result = appendLedgerRows(dataset.rows, rows);
+      if (!result.added) return;
+      await saveLedger({ ...dataset, rows: result.rows });
+      updateScopeAfterSave(result.rows);
+      confirmChange(`已追加 ${result.added} 条记录${result.duplicates ? `，跳过 ${result.duplicates} 条重复记录` : ""}。`);
+      return;
+    }
+    const replacement = validateLedgerRows(rows);
+    await saveLedger({ ...dataset, title: filename.replace(/\.csv$/i, "") || "活动台账", rows: replacement, attachments: {} });
+    clearAnalysis();
+    setScope(defaultScope(replacement));
+    setQuestion("");
+    confirmChange(`已导入 ${replacement.length} 条记录。`);
+  }
+
+  function openActivity(eventId: string) {
+    if (ready) setDialog({ type: "activity", eventId });
+  }
+
+  function closeDialog() {
+    const backToActivity = dialog?.type === "scan" || dialog?.type === "activity-editor" || dialog?.type === "compare";
+    setDialog(backToActivity && dialog.eventId ? { type: "activity", eventId: dialog.eventId } : null);
+  }
+
+  function reviewActivity(activity: LedgerActivity) {
+    changeScope(activityScope(activity));
+    setQuestion("");
+    setDialog(null);
+    selectView("review");
+  }
+
+  async function saveActivity(mode: ActivityEditorMode, record: AttendanceRecord) {
+    if (mode === "create" && activities.some(({ eventId }) => eventId === record.eventId)) {
+      throw new Error("此活动编号已存在，请换一个编号。");
+    }
+
+    let rows: AttendanceRecord[];
+    if (mode === "edit") {
+      const { eventId, eventName, date, category } = record;
+      rows = validateLedgerRows(dataset.rows.map((row) => row.eventId === eventId ? { ...row, eventName, date, category } : row));
+    } else {
+      const result = appendLedgerRows(dataset.rows, [record]);
+      if (!result.added) throw new Error("该活动已有此渠道记录。");
+      rows = result.rows;
+    }
+
+    await saveLedger({ ...dataset, rows });
+    updateScopeAfterSave(rows, mode === "edit" ? record : undefined);
+    confirmChange(mode === "channel" ? "已新增渠道。" : "已保存活动。", { type: "activity", eventId: record.eventId });
+  }
+
+  function showScan(row: AttendanceRecord | null, eventId?: string) {
+    if (ready) setDialog({ type: "scan", initial: row, eventId });
   }
 
   async function saveAttendance(key: string, attended: number, photo?: Attachment) {
@@ -177,7 +243,8 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
       attachments,
     });
     if (run) setSteps((current) => [...current, { name: "更新签到并重算", detail: `确认到场 ${attended} 人。` }]);
-    confirmChange("已更新签到。");
+    const eventId = dialog?.type === "scan" ? dialog.eventId : undefined;
+    confirmChange("已更新签到。", eventId ? { type: "activity", eventId } : null);
   }
 
   function applyRun(result: AnalysisRun) {
@@ -294,15 +361,17 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
             {view === "data" && (
               <>
                 <div className="page-heading data-heading">
-                  <div><h1>活动台账</h1><div className="page-meta"><span>{dataset.title} · {dataset.rows.length} 条记录</span></div></div>
+                  <div><h1>活动台账</h1><div className="page-meta"><span>{dataset.title} · {activities.length} 场活动 · {dataset.rows.length} 条记录</span></div></div>
                   <div className="page-actions">
                     <button type="button" className="button secondary" onClick={() => downloadCsv(dataset.rows, "活动台账.csv")} disabled={!ready}><ArrowDownToLine size={16} />导出 CSV</button>
                     <button type="button" className="button secondary" onClick={() => setDialog({ type: "csv" })} disabled={!ready}><Upload size={16} />导入 CSV</button>
-                    <button type="button" className="button primary" onClick={() => showScan(null)} disabled={!ready}><ScanLine size={16} />补录签到</button>
+                    <button type="button" className="button secondary" onClick={() => showScan(null)} disabled={!ready}><ScanLine size={16} />补录签到</button>
+                    <button type="button" className="button primary" onClick={() => setDialog({ type: "activity-editor", mode: "create" })} disabled={!ready}><Plus size={16} />新增活动</button>
                   </div>
                 </div>
                 {feedback}
-                <RecordsWorkspace rows={dataset.rows} attachments={dataset.attachments} edit={ready ? showScan : undefined} />
+                <RecordsWorkspace activities={activities} attachments={dataset.attachments} edit={ready ? showScan : undefined}
+                  openActivity={openActivity} compare={() => { if (ready) setDialog({ type: "compare" }); }} />
               </>
             )}
 
@@ -318,13 +387,22 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
 
       <PrintSummary report={report} trial={trial} source={dataset.title} rule={rule} />
 
-      {dialog?.type === "csv" && <CsvDialog close={() => setDialog(null)} replace={replaceDataset} />}
-      {dialog?.type === "scan" && <AttendanceDialog rows={dataset.rows} initial={dialog.initial}
+      {dialog?.type === "csv" && <CsvDialog currentRows={dataset.rows} close={closeDialog} save={importDataset} />}
+      {dialog?.type === "scan" && <AttendanceDialog rows={dialogActivity?.rows ?? dataset.rows} initial={dialog.initial}
         canScan={visionConfigured}
-        close={() => setDialog(null)} save={saveAttendance} />}
+        close={closeDialog} save={saveAttendance} />}
       {dialog?.type === "evidence" && <EvidenceDialog group={dialog.group} rule={rule}
         criteria={dialog.trial ? trial.criteria : report.criteria} trial={dialog.trial}
-        attachments={dataset.attachments} close={() => setDialog(null)} openRule={openRule} />}
+        attachments={dataset.attachments} close={closeDialog} openRule={openRule} openActivity={openActivity} />}
+      {dialog?.type === "activity" && dialogActivity && <ActivityDetail activity={dialogActivity} attachments={dataset.attachments}
+        useRules={useRules} canCompare={activities.length > 1} close={closeDialog}
+        editActivity={() => setDialog({ type: "activity-editor", mode: "edit", eventId: dialogActivity.eventId })}
+        addChannel={() => setDialog({ type: "activity-editor", mode: "channel", eventId: dialogActivity.eventId })}
+        editAttendance={(row) => showScan(row, dialogActivity.eventId)} compare={() => setDialog({ type: "compare", eventId: dialogActivity.eventId })}
+        review={() => reviewActivity(dialogActivity)} />}
+      {dialog?.type === "activity-editor" && (dialog.mode === "create" || dialogActivity) && <ActivityEditor mode={dialog.mode}
+        activity={dialogActivity} rows={dataset.rows} close={closeDialog} save={(row) => saveActivity(dialog.mode, row)} />}
+      {dialog?.type === "compare" && <ActivityComparison activities={activities} firstId={dialog.eventId} useRules={useRules} close={closeDialog} />}
     </>
   );
 }

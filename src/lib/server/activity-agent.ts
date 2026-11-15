@@ -2,26 +2,29 @@ import { generateText, isStepCount, tool } from "ai";
 import { z } from "zod";
 import type { AnalysisFollowUp, AnalysisInput, AnalysisRun, AnalysisStep } from "../analysis-run";
 import { defaultCriteria, filterRows, makeReport, percent, recordKey, scopeLabel, scopeSchema, type AnalysisScope, type Report } from "../attendance";
+import { listActivities } from "../ledger-activities";
 import { createModel, type ModelConfig } from "./model";
 import { retrieveRules, type RetrievedRules } from "./rule-retrieval";
 
 const scopePatch = z.object({
+  eventId: z.string().trim().min(1).max(80).nullable().optional(),
   from: z.iso.date().nullable().optional(),
   to: z.iso.date().nullable().optional(),
   category: z.string().trim().min(1).max(80).nullable().optional(),
   channel: z.string().trim().min(1).max(80).nullable().optional(),
   groupBy: z.enum(["channel", "category"]).optional(),
 });
-const scopeError = { error: "筛选条件无效。请核对日期顺序，并使用给定的活动类型和渠道名称。" };
+const scopeError = { error: "筛选条件无效。请核对日期、活动编号、类型和渠道。" };
 const retrievalLabels: Record<RetrievedRules["method"], string> = { vector: "向量", semantic: "Flash 语义", keyword: "关键词" };
 
-function ruleScopeKey({ from, to, category, channel }: AnalysisScope) {
-  return JSON.stringify([from, to, category, channel]);
+function ruleScopeKey({ from, to, category, channel, eventId }: AnalysisScope) {
+  return JSON.stringify([from, to, category, channel, eventId ?? null]);
 }
 
 const instructions = [
   "你是校园社团活动复盘助手，帮助负责人比较报名和到场表现。",
   "必须用统计工具获得结果。根据用户请求选择日期、分组和筛选，未指定的字段继承当前范围。",
+  "指定单场活动时，根据候选活动设置 eventId 和活动对应的日期、类型。明确要求全部活动时清空 eventId，并按要求扩大日期和类型范围。",
   "比较渠道使用 channel，比较活动类型使用 category。明确指定全部时才清空对应筛选值。",
   "先调用 summarize_attendance。启用规则时，统计会检索并应用范围内适用的资料。需再查具体条文时用 search_club_rules。",
   "用户要定位漏登、或者覆盖不足妨碍比较时，统计用 focus=missing，然后调用 list_attendance_records，onlyMissing 取 true。",
@@ -41,6 +44,8 @@ export async function runActivityAgent(
   const { rows, question, useRules } = input;
   const categories = [...new Set(rows.map((row) => row.category))];
   const channels = [...new Set(rows.map((row) => row.channel))];
+  const activities = listActivities(rows);
+  const activityIds = new Set(activities.map(({ eventId }) => eventId));
   const retrieved = new Map<string, Promise<RetrievedRules>>();
   const ruleSources = new Map<string, Set<string>>();
   const inspectedRecords = new Set<string>();
@@ -49,8 +54,9 @@ export async function runActivityAgent(
   function scopeFor(patch?: z.infer<typeof scopePatch>) {
     const result = scopeSchema.safeParse({ ...(analysis?.run.scope ?? input.scope), ...patch });
     if (!result.success) return null;
-    const { category, channel } = result.data;
-    if ((category && !categories.includes(category)) || (channel && !channels.includes(channel))) return null;
+    const { category, channel, eventId } = result.data;
+    if ((category && !categories.includes(category)) || (channel && !channels.includes(channel)) ||
+        (eventId && !activityIds.has(eventId))) return null;
     return result.data;
   }
 
@@ -177,6 +183,9 @@ export async function runActivityAgent(
   };
 
   const dates = rows.map(({ date }) => date).sort();
+  const namedActivities = activities.filter(({ eventId, eventName }) =>
+    eventId === input.scope.eventId || question.includes(eventId) || question.includes(eventName));
+  const candidates = namedActivities.length ? namedActivities : activities;
   await generateText({
     model: createModel(config).chatModel(config.text),
     system: instructions,
@@ -186,6 +195,7 @@ export async function runActivityAgent(
       dataDates: [dates[0], dates.at(-1)],
       categories: categories.slice(0, 80),
       channels: channels.slice(0, 80),
+      activities: candidates.slice(0, 60).map(({ eventId, eventName, date, category }) => ({ eventId, eventName, date, category })),
       useRules,
     }),
     tools,

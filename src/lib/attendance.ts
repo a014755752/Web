@@ -43,6 +43,7 @@ export const recordsSchema = z.array(recordSchema).min(1).max(MAX_ROWS).superRef
 });
 
 export const scopeSchema = z.object({
+  eventId: name.nullable().optional(),
   from: z.iso.date().nullable(),
   to: z.iso.date().nullable(),
   category: name.nullable(),
@@ -65,11 +66,12 @@ export const defaultCriteria: Criteria = { minSamples: 20, minCoverage: 0.8 };
 
 export function defaultScope(rows: AttendanceRecord[]): AnalysisScope {
   const dates = rows.map((row) => row.date).sort();
-  return { from: dates[0] ?? null, to: dates.at(-1) ?? null, category: null, channel: null, groupBy: "channel" };
+  return { eventId: null, from: dates[0] ?? null, to: dates.at(-1) ?? null, category: null, channel: null, groupBy: "channel" };
 }
 
 export function filterRows(rows: AttendanceRecord[], scope: AnalysisScope) {
   return rows.filter((row) => (
+    (!scope.eventId || row.eventId === scope.eventId) &&
     (!scope.from || row.date >= scope.from) &&
     (!scope.to || row.date <= scope.to) &&
     (!scope.category || row.category === scope.category) &&
