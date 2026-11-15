@@ -4,12 +4,11 @@ import { useState, type ChangeEvent } from "react";
 import { ArrowDownToLine, ChevronRight, FileImage, FileSpreadsheet, FileText, Pencil, Upload } from "lucide-react";
 import { numberLabel, percent, recordKey, type AttendanceRecord, type Criteria, type ReportGroup } from "@/lib/attendance";
 import { readCsv, writeCsv } from "@/lib/csv";
-import { demoRecords } from "@/lib/demo-data";
 import { clubRules, type ClubRule } from "@/lib/rules";
+import type { Attachments } from "@/lib/workspace-store";
 import { Modal } from "./modal";
 
-export type Attachment = { name: string; url: string };
-export type Attachments = Record<string, Attachment>;
+type RecordsProps = { rows: AttendanceRecord[]; attachments: Attachments; edit?: (row: AttendanceRecord) => void };
 
 export function downloadCsv(rows: AttendanceRecord[], filename: string) {
   const url = URL.createObjectURL(new Blob([writeCsv(rows)], { type: "text/csv;charset=utf-8" }));
@@ -20,11 +19,24 @@ export function downloadCsv(rows: AttendanceRecord[], filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function RecordsTable({ rows, attachments, edit }: {
-  rows: AttendanceRecord[];
-  attachments: Attachments;
-  edit?: (row: AttendanceRecord) => void;
-}) {
+export function RecordsWorkspace({ rows, attachments, edit }: RecordsProps) {
+  const [pendingOnly, setPendingOnly] = useState(false);
+  const pending = rows.filter(({ attended }) => attended === null);
+  const visibleRows = [...(pendingOnly ? pending : rows)].sort((a, b) => b.date.localeCompare(a.date));
+
+  return (
+    <section className="card records-card" aria-label="签到记录">
+      <div className="segmented records-filter" role="group" aria-label="签到状态">
+        <button type="button" aria-pressed={!pendingOnly} onClick={() => setPendingOnly(false)}>全部记录</button>
+        <button type="button" aria-pressed={pendingOnly} onClick={() => setPendingOnly(true)}>待补录 {pending.length}</button>
+      </div>
+      {pendingOnly && !pending.length ? <p className="empty-note">没有待补录记录。</p>
+        : <RecordsTable rows={visibleRows} attachments={attachments} edit={edit} />}
+    </section>
+  );
+}
+
+function RecordsTable({ rows, attachments, edit }: RecordsProps) {
   const showActions = Boolean(edit) || Object.keys(attachments).length > 0;
   return (
     <div className="table-scroll">
@@ -62,10 +74,11 @@ export function RecordsTable({ rows, attachments, edit }: {
   );
 }
 
-export function CsvDialog({ close, replace }: { close: () => void; replace: (rows: AttendanceRecord[], name: string) => void }) {
+export function CsvDialog({ close, replace }: { close: () => void; replace: (rows: AttendanceRecord[], name: string) => Promise<void> }) {
   const [pending, setPending] = useState<{ rows: AttendanceRecord[]; name: string } | null>(null);
   const [issues, setIssues] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "checking" | "saving">("idle");
+  const busy = phase !== "idle";
 
   async function inspect(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -77,7 +90,7 @@ export function CsvDialog({ close, replace }: { close: () => void; replace: (row
       setIssues(["请选择 1 MB 以内的 CSV 文件。"]);
       return;
     }
-    setBusy(true);
+    setPhase("checking");
     try {
       const result = readCsv(await file.text());
       setIssues(result.issues);
@@ -85,27 +98,40 @@ export function CsvDialog({ close, replace }: { close: () => void; replace: (row
     } catch {
       setIssues(["读取失败，请检查文件后重试。"]);
     } finally {
-      setBusy(false);
+      setPhase("idle");
+    }
+  }
+
+  async function importFile() {
+    if (!pending || busy) return;
+    setPhase("saving");
+    setIssues([]);
+    try {
+      await replace(pending.rows, pending.name);
+    } catch (cause) {
+      setIssues([cause instanceof Error ? cause.message : "导入失败，请重试。"]);
+    } finally {
+      setPhase("idle");
     }
   }
 
   return (
-    <Modal title="导入活动 CSV" close={close}>
+    <Modal title="导入活动台账" close={close} closeDisabled={phase === "saving"}>
       <div className="modal-body">
-        <p className="muted">日期格式为 YYYY-MM-DD。到场人数留空表示待补录。确认导入会替换当前数据。</p>
+        <p className="muted">日期用 YYYY-MM-DD。到场人数留空表示待补录。</p>
         <label className="file-drop">
           <Upload size={20} />
-          <span>{busy ? "正在校验…" : "选择 CSV 文件"}</span>
+          <span>{phase === "checking" ? "正在校验…" : "选择 CSV 文件"}</span>
           <input type="file" accept=".csv,text/csv" onChange={inspect} disabled={busy} />
         </label>
         {issues.length > 0 && <ul className="form-errors" role="alert">{issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul>}
-        {pending && <div className="import-preview"><FileSpreadsheet size={18} /><div><strong>{pending.name}</strong><span>校验通过 · {pending.rows.length} 条记录</span></div></div>}
+        {pending && <div className="import-preview"><FileSpreadsheet size={18} /><div><strong>{pending.name}</strong><span>{pending.rows.length} 条记录，导入后会替换当前台账。</span></div></div>}
       </div>
       <div className="modal-actions">
-        <button type="button" className="button secondary" onClick={() => downloadCsv(demoRecords, "活动记录模板.csv")}>
+        <button type="button" className="button secondary" onClick={() => downloadCsv([], "活动台账模板.csv")}>
           <ArrowDownToLine size={16} />下载模板
         </button>
-        <button type="button" className="button primary" disabled={!pending || busy} onClick={() => pending && replace(pending.rows, pending.name)}>确认导入</button>
+        <button type="button" className="button primary" disabled={!pending || busy} onClick={() => void importFile()}>{phase === "saving" ? "正在导入…" : "确认导入"}</button>
       </div>
     </Modal>
   );

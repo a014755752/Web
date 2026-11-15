@@ -3,11 +3,12 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 
-export function Modal({ title, children, close, wide = false }: {
+export function Modal({ title, children, close, wide = false, closeDisabled = false }: {
   title: string;
   children: ReactNode;
   close: () => void;
   wide?: boolean;
+  closeDisabled?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -23,13 +24,13 @@ export function Modal({ title, children, close, wide = false }: {
       ref={ref}
       className={`modal ${wide ? "modal-wide" : ""}`}
       aria-labelledby={titleId}
-      onCancel={(event) => { event.preventDefault(); close(); }}
-      onClick={(event) => { if (event.currentTarget === event.target) close(); }}
+      onCancel={(event) => { event.preventDefault(); if (!closeDisabled) close(); }}
+      onClick={(event) => { if (!closeDisabled && event.currentTarget === event.target) close(); }}
     >
       <div className="modal-content">
         <header className="modal-heading">
           <h2 id={titleId}>{title}</h2>
-          <button type="button" className="icon-button" aria-label="关闭" onClick={close}><X size={19} /></button>
+          <button type="button" className="icon-button" aria-label="关闭" onClick={close} disabled={closeDisabled}><X size={19} /></button>
         </header>
         {children}
       </div>

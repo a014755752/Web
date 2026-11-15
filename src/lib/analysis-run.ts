@@ -39,6 +39,7 @@ function matchingValue(question: string, choices: string[]) {
 export function runLocalAnalysis({ question, rows, scope, useRules }: AnalysisInput): AnalysisRun {
   const nextScope = { ...scope };
   if (/按活动类型|各类型|活动类型分组/.test(question)) nextScope.groupBy = "category";
+  else if (/按.{0,4}渠道|哪个宣传渠道|比较.{0,8}渠道|各渠道/.test(question)) nextScope.groupBy = "channel";
   const month = question.match(/(?:(\d{4})\s*年\s*)?(\d{1,2})\s*月/);
   if (month) {
     const year = Number(month[1] ?? scope.from?.slice(0, 4) ?? rows[0]?.date.slice(0, 4) ?? 2026);

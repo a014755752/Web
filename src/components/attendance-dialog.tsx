@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import { FileImage, LoaderCircle, ScanLine, Upload, X } from "lucide-react";
+import { FileImage, LoaderCircle, Upload, X } from "lucide-react";
 import { recordKey, type AttendanceRecord } from "@/lib/attendance";
 import { scanResultSchema, type ScanResult } from "@/lib/attendance-scan";
-import type { Attachment } from "./data-panels";
+import type { Attachment } from "@/lib/workspace-store";
 import { Modal } from "./modal";
 
 const imageLimit = 4 * 1024 * 1024;
@@ -18,18 +18,18 @@ function imageUrl(file: File) {
   });
 }
 
-export function AttendanceDialog({ rows, initial, canScan, showSample, close, save }: {
+export function AttendanceDialog({ rows, initial, canScan, close, save }: {
   rows: AttendanceRecord[];
   initial: AttendanceRecord | null;
   canScan: boolean;
-  showSample: boolean;
   close: () => void;
-  save: (key: string, attended: number, photo?: Attachment) => void;
+  save: (key: string, attended: number, photo?: Attachment) => Promise<void>;
 }) {
   const [target, setTarget] = useState(initial ? recordKey(initial) : "");
   const [value, setValue] = useState(initial?.attended?.toString() ?? "");
   const [attachment, setAttachment] = useState<Attachment | undefined>();
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [reportScope, setReportScope] = useState<ScanResult["scope"] | null>(null);
@@ -39,11 +39,6 @@ export function AttendanceDialog({ rows, initial, canScan, showSample, close, sa
   useEffect(() => () => active.current?.abort(), []);
 
   async function inspect(file: File, request: AbortController) {
-    if (!["image/png", "image/jpeg"].includes(file.type) || file.size > imageLimit || file.size === 0) {
-      setError("请选择 4 MB 以内的 PNG 或 JPG 文件。");
-      return;
-    }
-
     const url = await imageUrl(file);
     if (request.signal.aborted) return;
     setAttachment({ name: file.name, url });
@@ -81,7 +76,11 @@ export function AttendanceDialog({ rows, initial, canScan, showSample, close, sa
     setMessage(`${method} · ${hint}`);
   }
 
-  async function load(loadFile: (signal: AbortSignal) => Promise<File>) {
+  async function load(file: File) {
+    if (!["image/png", "image/jpeg"].includes(file.type) || file.size > imageLimit || file.size === 0) {
+      setError("请选择 4 MB 以内的 PNG 或 JPG 文件。");
+      return;
+    }
     active.current?.abort();
     const request = new AbortController();
     active.current = request;
@@ -92,8 +91,7 @@ export function AttendanceDialog({ rows, initial, canScan, showSample, close, sa
     setReportScope(null);
     setValue("");
     try {
-      const file = await loadFile(request.signal);
-      if (!request.signal.aborted) await inspect(file, request);
+      await inspect(file, request);
     } catch {
       if (!request.signal.aborted) setError("截图未能识别。可以对照原图手动填写。");
     } finally {
@@ -104,31 +102,30 @@ export function AttendanceDialog({ rows, initial, canScan, showSample, close, sa
   function choose(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (file) void load(async () => file);
+    if (file) void load(file);
   }
 
-  function chooseSample(alternate = false) {
-    void load(async (signal) => {
-      const name = alternate ? "checkin-a02-alt.png" : "checkin-a02.png";
-      const response = await fetch(`/samples/${name}`, { signal });
-      if (!response.ok) throw new Error("读取演示截图失败。");
-      return new File([await response.blob()], name, { type: "image/png" });
-    });
-  }
-
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || reportScope === "event") return;
+    if (busy || saving || reportScope === "event") return;
     const count = /^\d+$/.test(value) ? Number(value) : Number.NaN;
     if (!row || !Number.isSafeInteger(count) || count > row.registered) {
       setError("请选择记录并输入不超过报名人数的非负整数。");
       return;
     }
-    save(target, count, attachment);
+    setSaving(true);
+    setError("");
+    try {
+      await save(target, count, attachment);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "保存失败，请重试。");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
-    <Modal title="补录签到" close={close} wide>
+    <Modal title="补录签到" close={close} closeDisabled={saving} wide>
       <form onSubmit={submit}>
         <div className="modal-body">
           <div className="scan-grid">
@@ -136,7 +133,7 @@ export function AttendanceDialog({ rows, initial, canScan, showSample, close, sa
               {attachment ? (
                 <div className="image-preview">
                   <img src={attachment.url} alt="签到截图原图" />
-                  <button type="button" className="icon-button remove-photo" aria-label="移除截图" disabled={busy} onClick={() => {
+                  <button type="button" className="icon-button remove-photo" aria-label="移除截图" disabled={busy || saving} onClick={() => {
                     setAttachment(undefined);
                     setReportScope(null);
                     setMessage("");
@@ -146,29 +143,20 @@ export function AttendanceDialog({ rows, initial, canScan, showSample, close, sa
                 </div>
               ) : (
                 <label className="file-drop photo-drop">
-                  <FileImage size={27} /><span>上传签到截图</span><small>PNG 或 JPG · 最大 4 MB</small>
-                  <input type="file" accept="image/png,image/jpeg" onChange={choose} disabled={busy} />
+                  <FileImage size={27} /><span>上传签到截图</span><small>可选 · PNG 或 JPG · 最大 4 MB</small>
+                  <input type="file" accept="image/png,image/jpeg" onChange={choose} disabled={busy || saving} />
                 </label>
               )}
-              <div className="scan-actions">
-                {attachment && <label className="button secondary file-button"><Upload size={15} />更换图片
-                  <input type="file" accept="image/png,image/jpeg" onChange={choose} disabled={busy} />
-                </label>}
-                {showSample && (
-                  <>
-                    <button type="button" className="button secondary" onClick={() => chooseSample()} disabled={busy}>载入示例截图</button>
-                    <button type="button" className="button plain" onClick={() => chooseSample(true)} disabled={busy}>另一张示例</button>
-                  </>
-                )}
-              </div>
+              {attachment && <div className="scan-actions">
+                <label className="button secondary file-button"><Upload size={15} />更换截图
+                  <input type="file" accept="image/png,image/jpeg" onChange={choose} disabled={busy || saving} />
+                </label>
+              </div>}
             </div>
             <div className="scan-fields">
-              <div className="scan-state" aria-live="polite">
-                {busy ? <LoaderCircle size={16} className="spinning" /> : <ScanLine size={16} />}
-                {busy ? "处理截图中…" : canScan ? "截图识别与核对" : "本地 OCR 识别与核对"}
-              </div>
+              {busy && <div className="scan-state" role="status"><LoaderCircle size={16} className="spinning" />正在识别截图…</div>}
               <label className="field">活动与渠道
-                <select value={target} disabled={busy} onChange={(event) => {
+                <select value={target} disabled={busy || saving} onChange={(event) => {
                   setTarget(event.target.value);
                   if (!attachment) setValue(rows.find((item) => recordKey(item) === event.target.value)?.attended?.toString() ?? "");
                   setError("");
@@ -178,18 +166,18 @@ export function AttendanceDialog({ rows, initial, canScan, showSample, close, sa
                 </select>
               </label>
               <label className="field">到场人数
-                <input type="number" inputMode="numeric" min={0} max={row?.registered} step={1} value={value} disabled={busy}
-                  onChange={(event) => { setValue(event.target.value); setError(""); }} placeholder="输入核对后的到场数" required />
+                <input type="number" inputMode="numeric" min={0} max={row?.registered} step={1} value={value} disabled={busy || saving}
+                  onChange={(event) => { setValue(event.target.value); setError(""); }} required />
               </label>
-              {row && <p className="muted">报名 {row.registered} 人 · 当前到场 {row.attended ?? "待补录"}</p>}
+              {row && <p className="muted">报名 {row.registered} 人</p>}
               {message && <p className="field-note" role="status">{message}</p>}
               {error && <p className="form-error" role="alert">{error}</p>}
             </div>
           </div>
         </div>
         <div className="modal-actions">
-          <button type="button" className="button secondary" onClick={close}>取消</button>
-          <button type="submit" className="button primary" disabled={busy || !target || value === "" || reportScope === "event"}>确认补录</button>
+          <button type="button" className="button secondary" onClick={close} disabled={saving}>取消</button>
+          <button type="submit" className="button primary" disabled={busy || saving || !target || value === "" || reportScope === "event"}>{saving ? "正在保存…" : "保存签到"}</button>
         </div>
       </form>
     </Modal>

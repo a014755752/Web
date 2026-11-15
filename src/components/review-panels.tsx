@@ -15,12 +15,11 @@ const AttendanceChart = dynamic(() => import("./attendance-chart"), {
   loading: () => <div className="chart-canvas chart-loading" aria-label="载入图表" />,
 });
 
-export function AnalysisComposer({ question, setQuestion, analyze, running, modelConfigured, useRules, setUseRules, stop, error, steps, run }: {
+export function AnalysisComposer({ question, setQuestion, analyze, running, useRules, setUseRules, stop, error, steps, run }: {
   question: string;
   setQuestion: (value: string) => void;
   analyze: (question: string) => void;
   running: boolean;
-  modelConfigured: boolean;
   useRules: boolean;
   setUseRules: (value: boolean) => void;
   stop: () => void;
@@ -37,19 +36,16 @@ export function AnalysisComposer({ question, setQuestion, analyze, running, mode
     <section className="composer card" aria-labelledby="composer-title">
       <div className="composer-heading">
         <span className="composer-icon"><Sparkles size={21} strokeWidth={1.8} /></span>
-        <div>
-          <h2 id="composer-title">问问复盘助手</h2>
-          <p>{modelConfigured ? "用中文提问，查看计算依据。" : "当前使用本地统计，可从下方问题开始。"}</p>
-        </div>
+        <h2 id="composer-title">复盘助手</h2>
         <label className="rules-toggle">
           <input type="checkbox" checked={useRules} onChange={(event) => setUseRules(event.target.checked)} disabled={running} />
-          <span>检索社团规则</span>
+          <span>应用社团规则</span>
         </label>
       </div>
       <form className="composer-input" onSubmit={submit}>
         <input
           aria-label="复盘问题" value={question} onChange={(event) => setQuestion(event.target.value)}
-          placeholder="例如，10 月哪个宣传渠道值得优先复盘？" maxLength={300} disabled={running}
+          placeholder="想复盘哪些活动或渠道？" maxLength={300} disabled={running}
         />
         {running ? <button type="button" className="button secondary" onClick={stop}>停止</button> :
           <button type="submit" className="button primary analyze-button" disabled={!question.trim()}>
@@ -113,10 +109,10 @@ export function FilterBar({ scope, rows, change, reset }: {
 export function SummaryCards({ report }: { report: Report }) {
   const { totals } = report;
   const tiles = [
-    { icon: UsersRound, tone: "green", name: "报名人数", value: numberLabel(totals.registered), unit: "人", caption: `${totals.events} 场活动` },
+    { icon: UsersRound, tone: "green", name: "报名人次", value: numberLabel(totals.registered), unit: "人次", caption: `${totals.events} 场活动` },
     { icon: ClipboardCheck, tone: "blue", name: "已记录到场", value: numberLabel(totals.attended), unit: "人", caption: `${totals.rowCount - totals.missing} / ${totals.rowCount} 条已记录` },
     { icon: ChartColumnIncreasing, tone: "lavender", name: "到场率", value: percent(totals.rate), unit: "", caption: `有效报名 ${numberLabel(totals.tracked)} 人` },
-    { icon: ScanLine, tone: "amber", name: "签到覆盖率", value: percent(totals.coverage), unit: "", caption: totals.missing ? `${totals.missing} 条记录待补录` : "签到已记录" },
+    { icon: ScanLine, tone: "amber", name: "签到覆盖率", value: percent(totals.coverage), unit: "", caption: totals.missing ? `${totals.missing} 条记录待补录` : null },
   ];
 
   return <div className="summary-grid">
@@ -124,7 +120,7 @@ export function SummaryCards({ report }: { report: Report }) {
       <section className="card stat-card" key={name} aria-label={name}>
         <div className="stat-heading"><span className={`tile-icon ${tone}`}><Icon size={17} strokeWidth={1.85} /></span><h2>{name}</h2></div>
         <div className="stat-value">{value}{unit && <span>{unit}</span>}</div>
-        <span className="stat-caption">{caption}</span>
+        {caption && <span className="stat-caption">{caption}</span>}
       </section>
     ))}
   </div>;
@@ -139,10 +135,7 @@ export function Overview({ report, setGrouping, evidence }: {
   return (
     <section className="card overview" aria-labelledby="overview-title">
       <div className="card-heading">
-        <div>
-          <div className="heading-line"><BarChart3 size={18} /><h2 id="overview-title">报名与到场</h2></div>
-          <p>{report.scope.groupBy === "channel" ? "按宣传渠道汇总" : "按活动类型汇总"} · {report.groups.length} 组{report.groups.length > 0 && " · 点柱查看依据"}</p>
-        </div>
+        <div className="heading-line"><BarChart3 size={18} /><h2 id="overview-title">报名与到场</h2></div>
         <div className="segmented" role="group" aria-label="显示指标">
           <button type="button" aria-pressed={metric === "count"} onClick={() => setMetric("count")}>人数</button>
           <button type="button" aria-pressed={metric === "rate"} onClick={() => setMetric("rate")}>到场率</button>
@@ -225,8 +218,6 @@ export function InsightPanel({ report, rule, run, evidence, edit, openRule }: {
         {sources.length > 0 && <div className="extra-sources">{sources.map((id) => (
           <button key={id} type="button" className="link-button" onClick={() => openRule(id)}><FileText size={13} />{id === "checkin-2026" ? "签到数据补录说明" : id === "channels-2026" ? "宣传渠道归属说明" : "检索来源"}</button>
         ))}</div>}
-        {run?.retrieval === "vector" && <span className="retrieval-label">向量检索</span>}
-        {run?.retrieval === "keyword" && <span className="retrieval-label">关键词检索</span>}
       </div>
     </section>
   );
@@ -235,10 +226,9 @@ export function InsightPanel({ report, rule, run, evidence, edit, openRule }: {
 export function GroupTable({ report, evidence }: { report: Report; evidence: (value: ReportGroup) => void }) {
   return (
     <section className="card group-table" aria-labelledby="group-table-title">
-      <div className="card-heading"><div>
+      <div className="card-heading">
         <h2 id="group-table-title">{report.scope.groupBy === "channel" ? "渠道明细" : "活动类型明细"}</h2>
-        <p>到场率按已有签到记录计算</p>
-      </div></div>
+      </div>
       <div className="table-scroll">
         <table className="data-table">
           <thead><tr>
@@ -271,11 +261,8 @@ export function ScenarioPanel({ report, trial, change, evidence }: {
   evidence: (group: ReportGroup, trial: boolean) => void;
 }) {
   return (
-    <section className="card scenario-card" aria-labelledby="scenario-title">
-      <div className="card-heading"><div>
-        <div className="heading-line"><GitCompareArrows size={18} /><h2 id="scenario-title">条件试算</h2></div>
-        <p>比较同一批数据在不同样本门槛下的结论</p>
-      </div></div>
+    <details className="card scenario-card">
+      <summary className="scenario-summary"><GitCompareArrows size={18} />试算样本门槛<ChevronRight size={16} /></summary>
       <div className="scenarios">
         {[report, trial].map((result, index) => {
           const group = result.priorities[0];
@@ -303,7 +290,7 @@ export function ScenarioPanel({ report, trial, change, evidence }: {
           );
         })}
       </div>
-    </section>
+    </details>
   );
 }
 
@@ -315,7 +302,7 @@ export function PrintSummary({ report, trial, source, rule }: { report: Report; 
       <p>报名 {report.totals.registered} 人 · 已记录到场 {report.totals.attended} 人 · 到场率 {percent(report.totals.rate)} · 签到覆盖 {percent(report.totals.coverage)}</p>
       <p>计算口径：{rule?.title ?? "默认参数"} · 有效样本 ≥ {report.criteria.minSamples} 人 · 覆盖率 ≥ {percent(report.criteria.minCoverage)}。</p>
       <p>优先复盘：{report.priorities.map((group) => `${group.label}（${percent(group.rate)}）`).join("、") || "可比较组不足"}。</p>
-      <p>试算（{trial.criteria.minSamples} 人门槛）：{trial.priorities.map((group) => `${group.label}（${percent(group.rate)}）`).join("、") || "可比较组不足"}。</p>
+      {trial !== report && <p>试算（{trial.criteria.minSamples} 人门槛）：{trial.priorities.map((group) => `${group.label}（${percent(group.rate)}）`).join("、") || "可比较组不足"}。</p>}
       <table>
         <thead><tr><th>分组</th><th>总报名</th><th>有效报名</th><th>到场</th><th>到场率</th><th>覆盖率</th><th>状态</th></tr></thead>
         <tbody>{report.groups.map((group) => (

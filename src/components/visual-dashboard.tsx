@@ -11,9 +11,8 @@ function ChartEmpty({ children }: { children: ReactNode }) {
   return <div className="viz-empty"><Activity size={23} /><p>{children}</p></div>;
 }
 
-export default function VisualDashboard({ report, source, evidence, children }: {
+export default function VisualDashboard({ report, evidence, children }: {
   report: Report;
-  source: string;
   evidence: (group: ReportGroup) => void;
   children: ReactNode;
 }) {
@@ -28,14 +27,13 @@ export default function VisualDashboard({ report, source, evidence, children }: 
     { icon: UsersRound, name: "报名人次", value: numberLabel(report.totals.registered), tail: `${report.totals.events} 场活动`, tone: "blue" },
     { icon: ClipboardCheck, name: "已记录到场", value: numberLabel(report.totals.attended), tail: `${report.totals.rowCount - report.totals.missing} 条签到记录`, tone: "mint" },
     { icon: ChartNoAxesCombined, name: "到场率", value: percent(report.totals.rate), tail: `有效报名 ${numberLabel(report.totals.tracked)} 人`, tone: "violet" },
-    { icon: ScanLine, name: "签到覆盖率", value: percent(report.totals.coverage), tail: report.totals.missing ? `${report.totals.missing} 条记录待补录` : "当前范围无待补录记录", tone: "amber" },
+    { icon: ScanLine, name: "签到覆盖率", value: percent(report.totals.coverage), tail: report.totals.missing ? `${report.totals.missing} 条记录待补录` : null, tone: "amber" },
   ];
 
   return (
     <div className="visual-workspace">
       <header className="viz-hero">
         <div className="viz-hero-heading">
-          <span className="viz-source"><i />{source}</span>
           <h1>可视化大屏</h1>
           <p><CalendarDays size={15} />{scopeLabel(report.scope)}<span aria-hidden="true">·</span>{channelCount} 个宣传渠道</p>
         </div>
@@ -52,7 +50,7 @@ export default function VisualDashboard({ report, source, evidence, children }: 
           <section className={`viz-stat viz-stat-${tone}`} key={name} aria-label={name}>
             <div><span className="viz-stat-icon"><Icon size={17} /></span><h2>{name}</h2></div>
             <strong>{value}</strong>
-            <p>{tail}</p>
+            {tail && <p>{tail}</p>}
           </section>
         ))}
       </div>

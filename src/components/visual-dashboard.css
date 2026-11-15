@@ -2,20 +2,17 @@
   --viz-text: #e6f3f9;
   --viz-muted: #9db5c5;
   --viz-border: #29424f;
-  --viz-accent: #79ebcb;
   background: #09141e;
   color: var(--viz-text);
   color-scheme: dark;
 }
 
-.app-shell[data-view="visual"] .sidebar,
-.app-shell[data-view="visual"] .topbar {
+.app-shell[data-view="visual"] .sidebar {
   background: #0e1d28;
   border-color: #223844;
 }
 
-.app-shell[data-view="visual"] :is(.brand, .breadcrumb strong, .dataset-card strong) { color: var(--viz-text); }
-.app-shell[data-view="visual"] :is(.brand-name small, .breadcrumb, .model-state, .dataset-card span:not(.dataset-icon)) { color: var(--viz-muted); }
+.app-shell[data-view="visual"] .brand { color: var(--viz-text); }
 .app-shell[data-view="visual"] .brand-mark { background: #16433f; color: #9ff7dc; }
 .app-shell[data-view="visual"] .nav-link { color: #b6ccd9; }
 .app-shell[data-view="visual"] .nav-link:hover { background: #182e39; }
@@ -24,12 +21,6 @@
   border-color: #295b57;
   background: #152e36;
 }
-.app-shell[data-view="visual"] .dataset-card { background: #112633; border-color: #263f4d; }
-.app-shell[data-view="visual"] .dataset-icon { background: #18373d; color: #90e3d0; }
-.app-shell[data-view="visual"] .top-actions .secondary { background: #122631; border-color: #304957; color: #d6e7ef; }
-.app-shell[data-view="visual"] .top-actions .secondary:hover { background: #1c3540; }
-.app-shell[data-view="visual"] .top-actions .primary { background: #7fe4c0; border-color: #7fe4c0; color: #102921; }
-.app-shell[data-view="visual"] .top-actions .primary:hover { background: #a5f2d8; border-color: #a5f2d8; }
 .app-shell[data-view="visual"] :is(button, input, select):focus-visible { outline-color: #90f8d8; }
 
 .visual-workspace { min-width: 0; display: grid; gap: 14px; }
@@ -61,17 +52,6 @@
   mask-image: linear-gradient(90deg, transparent, #000);
 }
 .viz-hero-heading { min-width: 0; display: grid; justify-items: start; gap: 7px; }
-.viz-source {
-  min-width: 0;
-  max-width: 100%;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: #b6e1df;
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-.viz-source i { flex: 0 0 7px; height: 7px; border-radius: 50%; background: #70e5c1; box-shadow: 0 0 11px #70e5c162; }
 .viz-hero h1 { font-size: clamp(30px, 4vw, 42px); letter-spacing: -.05em; line-height: 1.2; font-weight: 700; color: #f1fbff; }
 .viz-hero-heading p { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; color: #b2cbd9; font-size: 12px; }
 .viz-hero-heading p svg { color: #7fc5c9; }
