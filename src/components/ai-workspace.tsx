@@ -147,17 +147,21 @@ export function AiWorkspace({ turns, threads, selected, select, create, remove, 
     event.preventDefault();
     if (working || files.uploading || !ready) return;
     const query = draft.trim();
-    if (query || files.documents.length) {
-      jumpToEnd();
-      ask({ kind: "chat", question: query || "请读取附件，提取活动和人数信息，指出需要确认的内容。", eventId: activityId || undefined,
-        documents: files.documents.length ? files.documents : undefined, allowWeb,
-        pair: kind === "compare" && currentBaseline && currentTarget ? { baselineId: currentBaseline.eventId, targetId: currentTarget.eventId } : undefined });
-    } else if (kind === "compare") {
+    if (kind === "compare") {
+      if (files.documents.length) {
+        setFormError("请先移除附件，或切换到活动复盘处理附件。");
+        return;
+      }
       if (!currentTarget || !currentBaseline) {
         setFormError("请选择两场不同的活动后发起对比。");
         return;
       }
-      compare(compareQuestion, currentBaseline, currentTarget);
+      compare(query || compareQuestion, currentBaseline, currentTarget);
+    } else if (query || files.documents.length) {
+      jumpToEnd();
+      ask({ kind: "chat", question: query || "请读取附件，提取活动和人数信息，指出需要确认的内容。", eventId: activityId || undefined,
+        documents: files.documents.length ? files.documents : undefined, allowWeb,
+      });
     } else {
       startReview(reviewQuestion, activityId || undefined);
     }
