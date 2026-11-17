@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "re
 import { ArrowDown, ArrowRight, ArrowUp, ChartNoAxesCombined, Check, ChevronRight, Copy, FileText, GitCompareArrows, LoaderCircle, PanelRight, Paperclip, Plus, RotateCcw, ScanLine, Square, X } from "lucide-react";
 import { groupLabels, numberLabel, percent, scopeLabel, type AttendanceRecord, type Report, type ReportGroup } from "@/lib/attendance";
 import type { AnalysisRun } from "@/lib/analysis-run";
+import type { ActivityPair } from "@/lib/conversation";
 import { formatPointChange, type LedgerActivity } from "@/lib/ledger-activities";
 import { clubRules } from "@/lib/rules";
 import { ToolCalls, ToolInspectorList } from "./agent-tools";
@@ -12,6 +13,7 @@ import { conversationTitle, type AiConversation, type AiTurn } from "./use-ai-co
 import "./ai-workspace.css";
 
 export type AiQuestion =
+  | { kind: "chat"; question: string; eventId?: string; pair?: ActivityPair }
   | { kind: "review"; question: string; eventId?: string }
   | { kind: "compare"; question: string; baselineId: string; targetId: string };
 
@@ -29,16 +31,6 @@ const compareQuestion = "比较两场活动的渠道表现，为下一场选一�
 
 function previousActivity(activities: LedgerActivity[], activity?: LedgerActivity) {
   return activity && activities.find(({ category, date }) => date < activity.date && category === activity.category);
-}
-
-function mentionedActivities(question: string, activities: LedgerActivity[]) {
-  const tokens = Array.from(question.matchAll(/[a-z0-9_-]+/gi));
-  return activities.flatMap((activity) => {
-    const byName = question.indexOf(activity.eventName);
-    const byId = tokens.find((token) => token[0].toUpperCase() === activity.eventId.toUpperCase())?.index ?? -1;
-    const position = byName < 0 ? byId : byId < 0 ? byName : Math.min(byName, byId);
-    return position < 0 ? [] : [{ activity, position }];
-  }).sort((a, b) => a.position - b.position).map(({ activity }) => activity);
 }
 
 function ActivitySelect({ label, value, activities, exclude, all, disabled, change }: {
@@ -82,8 +74,9 @@ export function AiWorkspace({ turns, threads, selected, select, create, activiti
   stop: () => void;
   actions: AiActions;
 }) {
-  const lastResult = turns.at(-1)?.result;
-  const [kind, setKind] = useState<AiQuestion["kind"]>(() => lastResult?.kind ?? "review");
+  const taskTurn = turns.findLast((turn) => turn.result && turn.result.kind !== "chat");
+  const lastResult = taskTurn?.result;
+  const [kind, setKind] = useState<"review" | "compare">(() => lastResult?.kind === "compare" ? "compare" : "review");
   const [draft, setDraft] = useState("");
   const [reviewId, setReviewId] = useState<string | null>(null);
   const [baselineId, setBaselineId] = useState(() => lastResult?.kind === "compare" ? lastResult.report.base.activity.eventId : "");
@@ -94,9 +87,11 @@ export function AiWorkspace({ turns, threads, selected, select, create, activiti
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const latest = turns.at(-1);
-  const working = latest?.status === "running";
-  const reviewContext = latest?.result?.kind === "review" ? latest.result.run.scope.eventId : undefined;
-  const context = reviewContext ?? (latest?.result?.kind === "compare" ? latest.result.report.comparison.activity.eventId : undefined);
+  const running = turns.find((turn) => turn.status === "running");
+  const working = !!running;
+  const inspectedTurn = running ?? latest;
+  const reviewContext = lastResult?.kind === "review" ? lastResult.run.scope.eventId : undefined;
+  const context = reviewContext ?? (lastResult?.kind === "compare" ? lastResult.report.comparison.activity.eventId : undefined);
   const reviewedActivity = activities.find(({ eventId }) => eventId === reviewContext);
   const previousReviewed = previousActivity(activities, reviewedActivity);
   const ids = new Set(activities.map(({ eventId }) => eventId));
@@ -105,8 +100,8 @@ export function AiWorkspace({ turns, threads, selected, select, create, activiti
   const currentTarget = activities.find(({ eventId }) => eventId === (targetId || activityId)) ?? activities[0];
   const defaultBase = previousActivity(activities, currentTarget) ?? activities.find(({ eventId }) => eventId !== currentTarget?.eventId);
   const currentBaseline = activities.find(({ eventId }) => eventId === baselineId && eventId !== currentTarget?.eventId) ?? defaultBase;
-  const pending = lastResult?.kind === "review" ? lastResult.pending : lastResult?.action.record;
-  const attachmentTask = pending && latest?.status === "completed" && latest.revision === revision ? latest : undefined;
+  const pending = lastResult?.kind === "review" ? lastResult.pending : lastResult?.kind === "compare" ? lastResult.action.record : undefined;
+  const attachmentTask = pending && taskTurn?.status === "completed" && taskTurn.revision === revision ? taskTurn : undefined;
   const latestMissing = activities.find(({ rows }) => rows.some(({ attended }) => attended === null));
   const missingCount = activities.reduce((sum, { rows }) => sum + rows.filter(({ attended }) => attended === null).length, 0);
 
@@ -141,20 +136,18 @@ export function AiWorkspace({ turns, threads, selected, select, create, activiti
     event.preventDefault();
     if (working || !ready) return;
     const query = draft.trim();
-    const mentioned = mentionedActivities(query, activities);
-    const previous = /上一次|上一场|上次|上场/u.test(query) && /比|差异|变化/u.test(query);
-    const naturalCompare = /对比|比较|相比|差异|变化/u.test(query) && mentioned.length >= 2;
-    if (kind === "compare" || naturalCompare || previous) {
-      const after = mentioned[1] ?? (previous ? mentioned[0] : undefined) ?? currentTarget;
-      const before = previous && mentioned.length < 2 ? previousActivity(activities, after) : mentioned[0] ?? currentBaseline;
-      if (!after || !before || before.eventId === after.eventId) {
-        setFormError(previous ? "没有找到更早的同类型活动，可以选择两场活动对比。" : "请选择两场不同的活动后发起对比。");
+    if (query) {
+      jumpToEnd();
+      ask({ kind: "chat", question: query, eventId: activityId || undefined,
+        pair: kind === "compare" && currentBaseline && currentTarget ? { baselineId: currentBaseline.eventId, targetId: currentTarget.eventId } : undefined });
+    } else if (kind === "compare") {
+      if (!currentTarget || !currentBaseline) {
+        setFormError("请选择两场不同的活动后发起对比。");
         return;
       }
-      compare(query || compareQuestion, before, after);
+      compare(compareQuestion, currentBaseline, currentTarget);
     } else {
-      const eventId = /所有活动|全部活动|全学期/u.test(query) ? undefined : mentioned[0]?.eventId ?? (activityId || undefined);
-      startReview(query || reviewQuestion, eventId);
+      startReview(reviewQuestion, activityId || undefined);
     }
     setFormError("");
     setDraft("");
@@ -188,7 +181,7 @@ export function AiWorkspace({ turns, threads, selected, select, create, activiti
               {notice}
               {storageWarning && <p className="form-error" role="status">对话暂时无法保存到浏览器。</p>}
               {!turns.length && <section className="agent-start" aria-labelledby="agent-start-title">
-                <h2 id="agent-start-title">这次要复盘什么？</h2>
+                <h2 id="agent-start-title">今天想聊什么？</h2>
                 <div className="agent-suggestions">
                   <button type="button" disabled={!ready} onClick={() => startReview(reviewQuestion, (latestMissing ?? currentTarget)?.eventId)}>
                     <ScanLine size={20} /><strong>查找签到缺口</strong><span>{latestMissing?.eventName ?? '核对报名和签到记录'}</span><ChevronRight size={16} /></button>
@@ -222,7 +215,7 @@ export function AiWorkspace({ turns, threads, selected, select, create, activiti
             </div>
             <label className="sr-only" htmlFor="ai-question">复盘问题</label>
             <textarea id="ai-question" rows={2} maxLength={300} value={draft} enterKeyHint="send"
-              placeholder={kind === "review" ? "例如，查一下这场活动的签到缺口，判断哪个渠道值得优先复盘。" : "例如，重点比较公众号，为下一场活动安排一条改进动作。"}
+              placeholder="聊聊活动、追问结论，或让我查一下台账…"
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229 && draft.trim()) {
                   event.preventDefault();
@@ -241,7 +234,7 @@ export function AiWorkspace({ turns, threads, selected, select, create, activiti
                 <input type="file" accept="image/png,image/jpeg" onChange={(event) => { attach(event.target.files?.[0]); event.target.value = ""; }} />
               </label>}
               <span className="agent-key-hint">Enter 发送 · Shift+Enter 换行</span>
-              {working ? <button type="button" className="button secondary" onClick={stop}><Square size={14} />停止分析</button> :
+              {working ? <button type="button" className="button secondary" onClick={stop}><Square size={14} />停止</button> :
                 <button type="submit" className="button primary" disabled={!ready}><ArrowUp size={16} />{draft.trim() ? "发送" : kind === "review" ? "开始 AI 复盘" : "开始 AI 对比"}</button>}
             </div>
             {formError && <p className="form-error" role="alert">{formError}</p>}
@@ -258,7 +251,7 @@ export function AiWorkspace({ turns, threads, selected, select, create, activiti
             <p>{activities.length} 场活动 · {missingCount} 条签到待补录</p>
             {currentTarget && <button type="button" className="link-button" onClick={() => actions.openActivity(currentTarget.eventId)}>{currentTarget.eventName}<ChevronRight size={14} /></button>}
           </section>
-          {latest && <ToolInspectorList turn={latest} inspect={(id) => {
+          {inspectedTurn && <ToolInspectorList turn={inspectedTurn} inspect={(id) => {
             const item = document.getElementById(id);
             if (!(item instanceof HTMLDetailsElement)) return;
             item.open = true;
@@ -281,7 +274,7 @@ export function AiWorkspace({ turns, threads, selected, select, create, activiti
 function RuleSources({ turn, open }: { turn: AiTurn; open: AiActions["openRule"] }) {
   const result = turn.result;
   const ids = result?.kind === "review" ? result.run.sources
-    : result ? [result.report.base.rule?.id, result.report.comparison.rule?.id] : [];
+    : result?.kind === "compare" ? [result.report.base.rule?.id, result.report.comparison.rule?.id] : [];
   const rules = [...new Set(ids)].flatMap((id) => clubRules.filter((rule) => rule.id === id));
   if (!rules.length) return null;
   return (
@@ -311,12 +304,12 @@ function TurnCard({ turn, stale, actions, current = false, comparePrevious, mode
   const mode = result?.kind === "review" ? result.run.mode : result?.mode;
   const title = result?.kind === "review"
     ? result.report.rows.find(({ eventId }) => eventId === result.run.scope.eventId)?.eventName ?? scopeLabel(result.run.scope)
-    : "两场活动对比";
-  const note = result?.kind === "review" ? result.run.note : result?.note;
+    : result?.kind === "compare" ? "两场活动对比" : "";
+  const note = result?.kind === "review" ? result.run.note : result?.kind === "compare" ? result.note : undefined;
 
   async function copyAnswer() {
     if (!result) return;
-    const body = result.kind === "review"
+    const body = result.kind === "chat" ? result.text : result.kind === "review"
       ? `报名 ${result.report.totals.registered} 人 · 已记录到场 ${result.report.totals.attended} 人 · 覆盖 ${percent(result.report.totals.coverage)}`
       : `${result.report.base.activity.eventName} → ${result.report.comparison.activity.eventName}\n到场率变化 ${formatPointChange(result.report.rateDelta)}\n${result.action.title}\n${result.action.detail}`;
     try {
@@ -337,10 +330,11 @@ function TurnCard({ turn, stale, actions, current = false, comparePrevious, mode
       <ToolCalls turn={turn} />
       {status === "stopped" && <p className="muted" role="status">分析已停止。</p>}
       {turn.warning && <p className="form-error" role="status">{turn.warning}</p>}
-      {stale && result && status !== "running" && <p className="muted">这条结论来自更新前的台账。发送同一问题可按最新数据重算。</p>}
-      {status === "running" && <p className="agent-running muted" role="status"><LoaderCircle className="spinning" size={15} />{turn.before ? "正在继续复盘" : "正在分析问题"}…</p>}
+      {stale && result && result.kind !== "chat" && status !== "running" && <p className="muted">这条结论来自更新前的台账。发送同一问题可按最新数据重算。</p>}
+      {status === "running" && !turn.text && <p className="agent-running muted" role="status"><LoaderCircle className="spinning" size={15} />{turn.before ? "正在继续复盘" : "正在处理"}…</p>}
+      {(result?.kind === "chat" || turn.text) && <div className="agent-chat-text">{result?.kind === "chat" ? result.text : turn.text}</div>}
       {note && status !== "running" && <p className="agent-reply-copy">{note}</p>}
-      {result && <div className="card ai-answer">
+      {result && result.kind !== "chat" && <div className="card ai-answer">
         <div className="ai-answer-heading">
           <h2>{title}</h2>
           <span className={`pill ${mode === "agent" ? "success" : "neutral"}`}>{mode === "agent" ? "AI 分析" : "本地统计"}</span>

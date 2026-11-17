@@ -190,7 +190,7 @@ export async function runActivityAgent(
     system: instructions,
     prompt: JSON.stringify({
       question,
-      history: input.context,
+      history: input.history ?? input.context,
       currentScope: input.scope,
       dataDates: [dates[0], dates.at(-1)],
       categories: categories.slice(0, 80),

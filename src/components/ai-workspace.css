@@ -30,6 +30,7 @@
 .agent-dock .agent-jump { position: absolute; top: -41px; left: 50%; translate: -50% 0; box-shadow: 0 3px 10px var(--shadow); }
 .agent-key-hint { color: var(--muted); font-size: 11px; margin-inline-end: auto; }
 .ai-turn, .ai-answer { min-width: 0; display: grid; gap: 12px; }
+.agent-chat-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; color: var(--text); }
 .ai-turn { grid-template-columns: minmax(0, 1fr); }
 .ai-turn + .ai-turn { margin-top: 34px; }
 .ai-composer { max-width: 1050px; margin: 0 auto; display: grid; gap: 7px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 13px; background: var(--surface); box-shadow: 0 6px 22px color-mix(in srgb, var(--shadow) 48%, transparent); }

@@ -1,5 +1,6 @@
 import { defaultCriteria, defaultScope, type AnalysisScope, type AttendanceRecord, type Criteria } from "./attendance";
 import type { ComparisonInput, ComparisonRun } from "./comparison-run";
+import type { ChatInput, ChatRun, ConversationMessage } from "./conversation";
 import { activityScope, listActivities } from "./ledger-activities";
 import { applicableRule, keywordRules } from "./rules";
 
@@ -32,8 +33,11 @@ export type AnalysisStep = { name: string; detail: string; tool?: ToolTrace };
 
 export type AnalysisEvent =
   | { type: "step"; step: AnalysisStep }
-  | { type: "result"; run: AnalysisRun | ComparisonRun }
+  | { type: "text"; delta: string }
+  | { type: "result"; run: AnalysisResponse }
   | { type: "error"; message: string };
+
+export type AnalysisResponse = AnalysisRun | ComparisonRun | ChatRun;
 
 export type AnalysisInput = {
   kind?: "review";
@@ -44,9 +48,10 @@ export type AnalysisInput = {
   fixedScope?: boolean;
   workflow?: boolean;
   context?: string;
+  history?: ConversationMessage[];
 };
 
-export type TaskInput = AnalysisInput | ComparisonInput;
+export type TaskInput = AnalysisInput | ComparisonInput | ChatInput;
 
 function matchingValue(question: string, choices: string[]) {
   const matches = [...new Set(choices)].filter((item) => question.includes(item));

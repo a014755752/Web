@@ -226,7 +226,7 @@ export function ReviewApp({ modelConfigured, modelLabel, visionConfigured = mode
     if (!ready || !conversation.loaded) return;
     setNotice("");
     const common = { question: input.question, rows: dataset.rows, useRules };
-    if (input.kind === "compare") {
+    if (input.kind === "compare" || input.kind === "chat") {
       void conversation.execute({ ...input, ...common }, dataset.revision);
       return;
     }
@@ -241,6 +241,10 @@ export function ReviewApp({ modelConfigured, modelLabel, visionConfigured = mode
     const request = turn.request;
     const common = { question: turn.question, rows: dataset.rows, useRules: turn.useRules };
     setNotice("");
+    if (request.kind === "chat") {
+      void conversation.execute({ ...request, ...common }, dataset.revision);
+      return;
+    }
     if (request.kind === "compare") {
       if (!activities.some(({ eventId }) => eventId === request.baselineId) || !activities.some(({ eventId }) => eventId === request.targetId)) {
         setNotice("对比对象已从台账移除，请重新选择活动。");

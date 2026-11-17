@@ -4,25 +4,27 @@ import { useEffect, useRef, useState } from "react";
 import { makeReport, recordKey, type AttendanceRecord, type Report } from "@/lib/attendance";
 import type { ScanSource } from "@/lib/attendance-scan";
 import { requestAnalysis } from "@/lib/analysis-client";
-import { runLocalAnalysis, type AnalysisRun, type AnalysisStep, type TaskInput } from "@/lib/analysis-run";
+import { runLocalAnalysis, type AnalysisResponse, type AnalysisRun, type AnalysisStep, type TaskInput } from "@/lib/analysis-run";
+import { greetingReply, type ChatInput, type ChatRun, type ConversationMessage } from "@/lib/conversation";
 import { comparisonActions, comparisonReport, type ComparisonAction, type ComparisonRun } from "@/lib/comparison-run";
 import type { ActivityComparisonReport } from "@/lib/ledger-activities";
 import { readConversations, writeConversation, type WorkspaceLedger } from "@/lib/workspace-store";
 
 type ReviewResult = { kind: "review"; run: AnalysisRun; report: Report; pending: AttendanceRecord | undefined };
 type CompareResult = { kind: "compare"; mode: ComparisonRun["mode"]; report: ActivityComparisonReport; action: ComparisonAction; note?: string };
-type TurnResult = ReviewResult | CompareResult;
+type TurnResult = ReviewResult | CompareResult | ChatRun;
 
 export type AiTurn = {
   id: string;
   startedAt?: number;
   updatedAt?: number;
-  request: { kind: "review"; scope: AnalysisRun["scope"]; fixedScope?: boolean } | { kind: "compare"; baselineId: string; targetId: string };
+  request: { kind: "review"; scope: AnalysisRun["scope"]; fixedScope?: boolean } | { kind: "compare"; baselineId: string; targetId: string } | Pick<ChatInput, "kind" | "eventId" | "pair">;
   question: string;
   useRules: boolean;
   revision: number;
   status: "running" | "completed" | "stopped";
   steps: AnalysisStep[];
+  text?: string;
   result?: TurnResult;
   before?: ReviewResult;
   warning?: string;
@@ -35,9 +37,14 @@ export function conversationTitle(thread: AiConversation) {
   return thread.turns[0]?.question.replace(/\s+/g, " ") || "新对话";
 }
 
-function resultFor(input: TaskInput, response?: AnalysisRun | ComparisonRun): TurnResult {
-  if (input.kind === "compare") {
-    const report = comparisonReport(input);
+function resultFor(input: TaskInput, response?: AnalysisResponse): TurnResult {
+  if (response && "kind" in response && response.kind === "chat") return response;
+  if (!response && input.kind === "chat") return { kind: "chat", mode: "local",
+    text: greetingReply(input.question) ?? "当前无法连接模型，请稍后重试。" };
+  if ((response && "kind" in response && response.kind === "compare") || (!response && input.kind === "compare")) {
+    const pair = response && "kind" in response && response.kind === "compare" ? response : input.kind === "compare" ? input : null;
+    if (!pair) throw new Error("缺少对比活动。");
+    const report = comparisonReport({ ...input, ...pair, kind: "compare" });
     const actions = comparisonActions(report, input.question);
     if (response && !("kind" in response)) throw new Error("模型未返回活动对比。");
     const action = response ? actions.find(({ id }) => id === response.actionId) : actions[0];
@@ -46,7 +53,8 @@ function resultFor(input: TaskInput, response?: AnalysisRun | ComparisonRun): Tu
   }
 
   if (response && "kind" in response) throw new Error("模型未返回复盘结果。");
-  const run = response ?? runLocalAnalysis(input);
+  const run = response ?? (input.kind !== "chat" && input.kind !== "compare" ? runLocalAnalysis(input) : null);
+  if (!run) throw new Error("未返回复盘结果。");
   const report = makeReport(input.rows, run.scope, run.criteria);
   const missing = report.rows.filter(({ attended }) => attended === null).sort((a, b) => b.registered - a.registered);
   const followUp = run.followUp;
@@ -54,7 +62,7 @@ function resultFor(input: TaskInput, response?: AnalysisRun | ComparisonRun): Tu
   return { kind: "review", run, report, pending: selected ?? missing[0] };
 }
 
-function localStep(result: TurnResult): AnalysisStep {
+function localStep(result: ReviewResult | CompareResult): AnalysisStep {
   return result.kind === "review"
     ? { name: "本地统计", detail: `${result.report.totals.rowCount} 条签到记录，${result.report.totals.missing} 条待补录。` }
     : { name: "本地对比", detail: `${result.report.channels.filter(({ delta }) => delta !== null).length} 个渠道可比较。` };
@@ -87,17 +95,30 @@ function makeThread(): AiConversation {
 }
 
 function promptContext(turns: AiTurn[], revision: number) {
-  const history = turns.filter((turn) => turn.revision === revision && turn.status === "completed" && turn.result).slice(-3).flatMap(({ question, result }) => {
-    if (!result) return [];
-    const summary = result.kind === "review" ? {
-      scope: result.run.scope, priority: result.report.priorities.map(({ label }) => label).join("、").slice(0, 100),
-      pending: result.pending ? `${result.pending.eventId} · ${result.pending.channel}` : null,
-    } : {
-      baselineId: result.report.base.activity.eventId, targetId: result.report.comparison.activity.eventId, action: result.action.title,
-    };
-    return [{ question, summary }];
-  });
-  return history.length ? JSON.stringify(history).slice(0, 1800) : undefined;
+  const history: ConversationMessage[] = [];
+  let size = 0;
+  for (const turn of [...turns].reverse()) {
+    const result = turn.result;
+    if (turn.status !== "completed" || !result) continue;
+    const content = result.kind === "chat" ? result.text : JSON.stringify({
+      ledger: turn.revision === revision ? "本轮台账版本" : "历史台账版本，数值不可作为当前数据",
+      ...(result.kind === "review" ? {
+        scope: result.run.scope, totals: result.report.totals,
+        groups: result.report.groups.slice(0, 25).map(({ label, registered, attended, rate, coverage, status }) =>
+          ({ label, registered, attended, rate, coverage, status })), note: result.run.note,
+        pending: result.pending ? `${result.pending.eventId} · ${result.pending.channel}` : null,
+      } : {
+        baselineId: result.report.base.activity.eventId, targetId: result.report.comparison.activity.eventId,
+        rateDelta: result.report.rateDelta,
+        channels: result.report.channels.slice(0, 25).map(({ label, before, after, delta }) =>
+          ({ label, before: before?.rate, after: after?.rate, delta })), action: result.action, note: result.note,
+      }),
+    });
+    if (history.length >= 60 || size + content.length + turn.question.length > 24000) break;
+    history.unshift({ role: "user", content: turn.question }, { role: "assistant", content });
+    size += content.length + turn.question.length;
+  }
+  return history;
 }
 
 export function useAiConversation(modelConfigured: boolean) {
@@ -187,6 +208,7 @@ export function useAiConversation(modelConfigured: boolean) {
     } else {
       const parameters: AiTurn["request"] = input.kind === "compare"
         ? { kind: "compare", baselineId: input.baselineId, targetId: input.targetId }
+        : input.kind === "chat" ? { kind: "chat", eventId: input.eventId, pair: input.pair }
         : { kind: "review", scope: input.scope, fixedScope: input.fixedScope };
       const startedAt = Date.now();
       const turn: AiTurn = { id, startedAt, updatedAt: startedAt, question: input.question, request: parameters, useRules: input.useRules, revision, status: "running", steps: [] };
@@ -199,21 +221,23 @@ export function useAiConversation(modelConfigured: boolean) {
       const local = (result.kind === "review" ? result.run.mode : result.mode) === "local";
       update(threadId, id, (turn) => ({
         ...turn, result, revision, warning, status: "completed",
-        steps: local ? [...settleSteps(turn.steps, "failed"), localStep(result)] : settleSteps(turn.steps, "failed"),
+        steps: local && result.kind !== "chat" ? [...settleSteps(turn.steps, "failed"), localStep(result)] : settleSteps(turn.steps, "failed"),
       }));
     }
 
     try {
-      const context = promptContext(currentThread.turns, revision);
-      const response = modelConfigured ? await requestAnalysis({ ...input, context }, request.controller.signal, (step) => {
+      const history = promptContext(currentThread.turns, revision);
+      const response = modelConfigured ? await requestAnalysis({ ...input, history }, request.controller.signal, (step) => {
         if (isCurrent()) update(threadId, id, (turn) => ({ ...turn, steps: saveStep(turn.steps, step) }));
+      }, (delta) => {
+        if (isCurrent()) update(threadId, id, (turn) => ({ ...turn, text: (turn.text ?? "") + delta }));
       }) : undefined;
       if (isCurrent()) finish(resultFor(input, response));
     } catch (error) {
       if (!isCurrent()) return;
       try {
         const warning = error instanceof Error ? error.message : "模型暂时不可用。";
-        finish(resultFor(input), `${warning} 已使用本地统计。`);
+        finish(resultFor(input), input.kind === "chat" ? warning : `${warning} 已使用本地统计。`);
       } catch (fallbackError) {
         const warning = fallbackError instanceof Error ? fallbackError.message : "无法完成分析。";
         update(threadId, id, (turn) => ({ ...turn, status: "completed", warning, steps: settleSteps(turn.steps, "failed") }));
@@ -225,7 +249,7 @@ export function useAiConversation(modelConfigured: boolean) {
 
   function resume(turn: AiTurn, ledger: WorkspaceLedger, row: AttendanceRecord, source?: ScanSource) {
     const previous = turn.result;
-    if (!previous) return;
+    if (!previous || previous.kind === "chat") return;
     const common = { question: turn.question, rows: ledger.rows, useRules: turn.useRules };
     const input: TaskInput = previous.kind === "review"
       ? { ...common, scope: previous.run.scope, fixedScope: true, workflow: true }

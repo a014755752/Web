@@ -1,4 +1,5 @@
 import { type AttendanceRecord } from "./attendance";
+import type { ActivityPair, ConversationMessage } from "./conversation";
 import { compareActivityReports, listActivities, type ActivityComparisonReport } from "./ledger-activities";
 
 export type ComparisonInput = {
@@ -9,6 +10,7 @@ export type ComparisonInput = {
   targetId: string;
   useRules: boolean;
   context?: string;
+  history?: ConversationMessage[];
 };
 
 export type ComparisonAction = {
@@ -19,7 +21,7 @@ export type ComparisonAction = {
   record?: AttendanceRecord;
 };
 
-export type ComparisonRun = { kind: "compare"; mode: "agent" | "local"; actionId: string; note?: string };
+export type ComparisonRun = ActivityPair & { kind: "compare"; mode: "agent" | "local"; actionId: string; note?: string };
 
 export function comparisonReport({ rows, baselineId, targetId, useRules }: ComparisonInput) {
   const activities = listActivities(rows);
@@ -44,7 +46,8 @@ export function comparisonActions({ base, comparison, channels }: ActivityCompar
   const comparable = channels.filter(({ delta }) => delta !== null)
     .sort((a, b) => Number(question.includes(b.label)) - Number(question.includes(a.label)) || (a.delta ?? 0) - (b.delta ?? 0)).slice(0, 5);
   for (const { label, delta } of comparable) {
-    const index = actions.length;
+    // Keep IDs stable when the conversational agent resolves a follow-up into a fuller question.
+    const index = channels.findIndex((channel) => channel.label === label);
     if ((delta ?? 0) < -0.05) actions.push({
       id: `remind-${index}`, channel: label,
       title: `试行「${label}」报名提醒`,

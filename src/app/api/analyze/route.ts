@@ -3,6 +3,7 @@ import type { AnalysisEvent, AnalysisStep } from "@/lib/analysis-run";
 import { recordsSchema, scopeSchema } from "@/lib/attendance";
 import { runActivityAgent } from "@/lib/server/activity-agent";
 import { runComparisonAgent } from "@/lib/server/comparison-agent";
+import { runConversationAgent } from "@/lib/server/conversation-agent";
 import { modelConfig, modelFailure } from "@/lib/server/model";
 
 export const runtime = "nodejs";
@@ -12,8 +13,12 @@ const common = {
   rows: recordsSchema,
   useRules: z.boolean(),
   context: z.string().max(1800).optional(),
+  history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1).max(12000) })).max(60)
+    .refine((messages) => messages.reduce((sum, message) => sum + message.content.length, 0) <= 30000).optional(),
 };
 const inputSchema = z.union([
+  z.object({ ...common, kind: z.literal("chat"), eventId: z.string().max(80).optional(),
+    pair: z.object({ baselineId: z.string().max(80), targetId: z.string().max(80) }).optional() }),
   z.object({ ...common, kind: z.literal("review").optional(), scope: scopeSchema, fixedScope: z.boolean().optional(), workflow: z.boolean().optional() }),
   z.object({ ...common, kind: z.literal("compare"), baselineId: z.string().trim().min(1).max(80), targetId: z.string().trim().min(1).max(80) })
     .refine(({ baselineId, targetId, rows }) => baselineId !== targetId &&
@@ -53,7 +58,9 @@ export async function POST(request: Request) {
 
       try {
         const onStep = (step: AnalysisStep) => emit({ type: "step", step });
-        const result = parsed.data.kind === "compare"
+        const result = parsed.data.kind === "chat"
+          ? await runConversationAgent(parsed.data, config, signal, onStep, (delta) => emit({ type: "text", delta }))
+          : parsed.data.kind === "compare"
           ? await runComparisonAgent(parsed.data, config, signal, onStep)
           : await runActivityAgent(parsed.data, config, signal, onStep);
         emit({ type: "result", run: result });
