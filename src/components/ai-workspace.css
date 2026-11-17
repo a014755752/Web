@@ -126,7 +126,7 @@
 .agent-tool-data pre { min-height: 54px; max-height: 220px; overflow: auto; padding: 8px; margin: 0; border-radius: 6px; border: 1px solid var(--soft-border); background: var(--surface); color: var(--text); font-size: 12px; }
 
 .agent-inspector { flex: 0 0 clamp(248px, 21%, 304px); min-width: 0; min-height: 0; padding: 14px; border-left: 1px solid var(--border); background: var(--surface-tint); overflow: auto; }
-.agent-inspector > header, .agent-sessions > header { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.agent-inspector > header { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .agent-inspector > header h2 { font-size: 15px; }
 .agent-inspector-scope, .agent-inspector-calls { display: grid; gap: 6px; margin-top: 15px; padding-top: 12px; border-top: 1px solid var(--border); }
 .agent-inspector-scope h3, .agent-inspector-calls h3 { font-size: 12px; color: var(--muted); }
@@ -137,9 +137,12 @@
 .agent-inspector-link small, .agent-inspector-link svg { color: var(--muted); white-space: nowrap; }
 .agent-inspector-link:hover { background: var(--surface-muted); }
 
-.agent-sessions { margin: 15px 0 9px; padding-top: 7px; display: flex; flex-direction: column; flex: 1; min-height: 0; border-top: 1px solid var(--border); }
-.agent-sessions h2 { color: var(--muted); font-size: 12px; font-weight: 620; margin-left: 4px; }
-.agent-sessions-list { min-height: 0; overflow: auto; scrollbar-width: thin; }
+.conversation-sidebar { flex: 0 0 228px; width: 228px; display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; padding: 14px 10px; border-right: 1px solid var(--border); background: var(--surface-tint); }
+.conversation-sidebar > header { display: flex; align-items: center; justify-content: space-between; padding-left: 5px; }
+.conversation-sidebar h2 { font-size: 13px; font-weight: 600; }
+.conversation-new { justify-content: flex-start; width: 100%; }
+.conversation-sidebar-scroll { flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; }
+.conversation-sidebar-backdrop { display: none; }
 .conversation-list { display: grid; gap: 3px; min-width: 0; }
 .conversation-date-group { margin: 14px 7px 5px; font-size: 11px; font-weight: 500; color: var(--muted); }
 .conversation-row { min-width: 0; border: 1px solid transparent; border-radius: 8px; }
@@ -163,8 +166,6 @@
 .conversation-confirm-delete { background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger-border); }
 .conversation-confirm-delete:hover { border-color: var(--danger-text); }
 .conversation-empty { color: var(--muted); font-size: 12px; padding: 18px 7px; text-align: center; }
-.conversation-history-body { padding-top: 12px; }
-.conversation-history-body > .conversation-list { max-height: min(60dvh, 500px); overflow-y: auto; margin-top: 8px; scrollbar-width: thin; }
 .conversation-search { display: flex; align-items: center; gap: 8px; color: var(--muted); border: 1px solid var(--border); background: var(--surface-tint); border-radius: 8px; padding: 0 10px; }
 .conversation-search:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
 .conversation-search input { width: 100%; min-width: 0; background: transparent; color: var(--text); border: 0; padding: 10px 0; font: inherit; font-size: 13px; outline: 0; }
@@ -173,9 +174,13 @@
   .agent-inspector { position: absolute; z-index: 3; top: 0; bottom: 0; right: 0; width: min(100%, 300px); box-shadow: -7px 0 22px var(--shadow); }
 }
 
+@media (max-width: 1099px) {
+  .conversation-sidebar { position: absolute; inset: 0 auto 0 0; z-index: 5; width: min(288px, calc(100% - 42px)); box-shadow: 6px 0 22px var(--shadow); }
+  .conversation-sidebar-backdrop { display: block; position: absolute; inset: 0; z-index: 4; border: 0; padding: 0; background: var(--backdrop, #0006); }
+}
+
 @media (max-width: 880px) {
   .app-shell[data-view="ai"] { display: grid; grid-template: auto minmax(0, 1fr) / minmax(0, 1fr); }
-  .agent-sessions { display: none; }
 }
 
 @media (max-width: 1100px) {

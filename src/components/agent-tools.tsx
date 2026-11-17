@@ -1,9 +1,8 @@
 "use client";
 
-import { Check, ChevronRight, CircleAlert, CirclePause, LoaderCircle, Plus, Terminal } from "lucide-react";
+import { Check, ChevronRight, CircleAlert, CirclePause, LoaderCircle, Terminal } from "lucide-react";
 import type { AnalysisStep } from "@/lib/analysis-run";
-import { type AiConversation, type AiTurn } from "./use-ai-conversation";
-import { ConversationList } from "./conversation-history";
+import type { AiTurn } from "./use-ai-conversation";
 
 const states = {
   running: { label: "执行中", Icon: LoaderCircle },
@@ -14,19 +13,6 @@ const states = {
 
 function toolAnchor(turnId: string, index: number) {
   return `agent-tool-${turnId}-${index}`;
-}
-
-export function AgentSessions({ threads, selected, select, create, remove }: {
-  threads: AiConversation[]; selected: string; select: (id: string) => void; create: () => void; remove: (id: string) => Promise<boolean>;
-}) {
-  return (
-    <section className="agent-sessions" aria-label="对话历史">
-      <header><h2>对话历史</h2><button type="button" className="icon-button" title="新对话" aria-label="新对话" onClick={create}><Plus size={16} /></button></header>
-      <div className="agent-sessions-list">
-        <ConversationList threads={threads} selected={selected} select={select} remove={remove} compact />
-      </div>
-    </section>
-  );
 }
 
 export function ToolCalls({ turn }: { turn: AiTurn }) {

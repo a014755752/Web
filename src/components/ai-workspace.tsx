@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowDown, ArrowRight, ArrowUp, ChartNoAxesCombined, Check, ChevronRight, Copy, FileText, GitCompareArrows, History, LoaderCircle, PanelRight, Paperclip, Plus, RotateCcw, ScanLine, Square, X } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, ChartNoAxesCombined, Check, ChevronRight, Copy, FileText, GitCompareArrows, LoaderCircle, PanelLeft, PanelRight, Paperclip, RotateCcw, ScanLine, Square, X } from "lucide-react";
 import { groupLabels, numberLabel, percent, scopeLabel, type AttendanceRecord, type Report, type ReportGroup } from "@/lib/attendance";
 import type { AnalysisRun } from "@/lib/analysis-run";
 import type { ActivityPair } from "@/lib/conversation";
@@ -10,7 +10,7 @@ import { formatPointChange, type LedgerActivity } from "@/lib/ledger-activities"
 import { clubRules } from "@/lib/rules";
 import { ToolCalls, ToolInspectorList } from "./agent-tools";
 import { type AiConversation, type AiTurn } from "./use-ai-conversation";
-import { ConversationHistory } from "./conversation-history";
+import { ConversationSidebar } from "./conversation-history";
 import "./ai-workspace.css";
 
 export type AiQuestion =
@@ -85,7 +85,7 @@ export function AiWorkspace({ turns, threads, selected, select, create, remove, 
   const [targetId, setTargetId] = useState(() => lastResult?.kind === "compare" ? lastResult.report.comparison.activity.eventId : "");
   const [formError, setFormError] = useState("");
   const [inspector, setInspector] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
   const [awayFromEnd, setAwayFromEnd] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -108,7 +108,10 @@ export function AiWorkspace({ turns, threads, selected, select, create, remove, 
   const latestMissing = activities.find(({ rows }) => rows.some(({ attended }) => attended === null));
   const missingCount = activities.reduce((sum, { rows }) => sum + rows.filter(({ attended }) => attended === null).length, 0);
 
-  useEffect(() => { setInspector(window.matchMedia("(min-width: 1250px)").matches); }, []);
+  useEffect(() => {
+    setSessionsOpen(window.matchMedia("(min-width: 1100px)").matches);
+    setInspector(window.matchMedia("(min-width: 1600px)").matches);
+  }, []);
 
   useLayoutEffect(() => {
     if (pinned.current && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
@@ -163,18 +166,35 @@ export function AiWorkspace({ turns, threads, selected, select, create, remove, 
   return (
     <div className="agent-workspace">
       <header className="agent-header">
-        <div className="ai-page-title"><Image className="composer-icon" src="/images/review-pencil.webp" width={32} height={32} alt="" unoptimized /><h1>AI 对话</h1></div>
+        <div className="ai-page-title">
+          <button type="button" className="icon-button" aria-label={sessionsOpen ? "收起会话列表" : "打开会话列表"} aria-expanded={sessionsOpen}
+            aria-controls="conversation-sidebar" onClick={() => {
+              setSessionsOpen(!sessionsOpen);
+              if (!sessionsOpen && window.matchMedia("(max-width: 1099px)").matches) setInspector(false);
+            }}><PanelLeft size={18} /></button>
+          <Image className="composer-icon" src="/images/review-pencil.webp" width={32} height={32} alt="" unoptimized /><h1>AI 对话</h1>
+        </div>
         <div className="agent-header-actions">
-          <button type="button" className="button primary small-button agent-new" disabled={!ready} onClick={() => {
-            create();
-            document.getElementById("ai-question")?.focus();
-          }}><Plus size={16} />新对话</button>
-          <button type="button" className="button secondary small-button" disabled={!ready} aria-haspopup="dialog" onClick={() => setHistoryOpen(true)}><History size={16} />对话历史</button>
           <button type="button" className="button secondary small-button" aria-expanded={inspector} aria-controls="agent-inspector"
-            onClick={() => setInspector(!inspector)}><PanelRight size={16} />工具面板</button>
+            onClick={() => {
+              setInspector(!inspector);
+              if (!inspector && window.matchMedia("(max-width: 1099px)").matches) setSessionsOpen(false);
+            }}><PanelRight size={16} />工具面板</button>
         </div>
       </header>
       <div className="agent-body">
+        {sessionsOpen && <>
+          <button type="button" className="conversation-sidebar-backdrop" aria-label="关闭会话列表" onClick={() => setSessionsOpen(false)} />
+          <ConversationSidebar threads={threads} selected={selected} remove={remove} ready={ready} close={() => setSessionsOpen(false)}
+            select={(id) => {
+              if (window.matchMedia("(max-width: 1099px)").matches) setSessionsOpen(false);
+              select(id);
+            }} create={() => {
+              create();
+              if (window.matchMedia("(max-width: 1099px)").matches) setSessionsOpen(false);
+              requestAnimationFrame(() => document.getElementById("ai-question")?.focus());
+            }} />
+        </>}
         <div className="agent-main">
           <div ref={scroller} className="agent-scroll" aria-label="对话记录" onScroll={(event) => {
             const node = event.currentTarget;
@@ -271,7 +291,6 @@ export function AiWorkspace({ turns, threads, selected, select, create, remove, 
           </section>}
         </aside>}
       </div>
-      {historyOpen && <ConversationHistory threads={threads} selected={selected} select={select} remove={remove} close={() => setHistoryOpen(false)} />}
     </div>
   );
 }

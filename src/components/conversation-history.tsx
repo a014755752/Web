@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { LoaderCircle, MessageSquare, Search, Trash2 } from "lucide-react";
-import { Modal } from "./modal";
+import { LoaderCircle, MessageSquare, Plus, Search, Trash2, X } from "lucide-react";
 import { conversationTitle, type AiConversation } from "./use-ai-conversation";
 
 type HistoryProps = {
@@ -71,14 +70,16 @@ export function ConversationList({ threads, selected, select, remove, compact = 
   </div>;
 }
 
-export function ConversationHistory({ close, ...props }: HistoryProps & { close: () => void }) {
+export function ConversationSidebar({ close, create, ready, ...props }: HistoryProps & { close: () => void; create: () => void; ready: boolean }) {
   const [query, setQuery] = useState("");
-  return <Modal title="对话历史" close={close}>
-    <div className="modal-body conversation-history-body">
-      <label className="conversation-search"><Search size={16} aria-hidden="true" />
-        <input type="search" aria-label="搜索对话" placeholder="搜索对话" value={query} onChange={(event) => setQuery(event.target.value)} autoFocus />
-      </label>
-      <ConversationList {...props} query={query} select={(id) => { props.select(id); close(); }} />
-    </div>
-  </Modal>;
+  return <aside id="conversation-sidebar" className="conversation-sidebar" aria-label="会话列表" onKeyDown={(event) => {
+    if (event.key === "Escape") { event.stopPropagation(); close(); }
+  }}>
+    <header><h2>对话</h2><button type="button" className="icon-button" aria-label="收起会话列表" onClick={close}><X size={16} /></button></header>
+    <button type="button" className="button secondary conversation-new" disabled={!ready} onClick={create}><Plus size={16} />新对话</button>
+    <label className="conversation-search"><Search size={15} aria-hidden="true" />
+      <input type="search" aria-label="搜索对话" placeholder="搜索对话" value={query} onChange={(event) => setQuery(event.target.value)} />
+    </label>
+    <div className="conversation-sidebar-scroll"><ConversationList {...props} query={query} /></div>
+  </aside>;
 }

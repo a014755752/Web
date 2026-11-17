@@ -18,7 +18,6 @@ import { themeStorageKey, type Theme } from "@/lib/theme";
 import { readLedger, writeLedger, type Attachment, type WorkspaceLedger } from "@/lib/workspace-store";
 import { AttendanceDialog } from "./attendance-dialog";
 import { ActivityComparison, ActivityDetail, ActivityEditor, type ActivityEditorMode } from "./activity-panels";
-import { AgentSessions } from "./agent-tools";
 import { AiWorkspace, type AiQuestion } from "./ai-workspace";
 import { CsvDialog, downloadCsv, EvidenceDialog, RecordsWorkspace, RulesWorkspace, type CsvImportMode } from "./data-panels";
 import { FilterBar, GroupTable, InsightPanel, Overview, PrintSummary, ScenarioPanel, SummaryCards } from "./review-panels";
@@ -354,8 +353,6 @@ export function ReviewApp({ modelConfigured, modelLabel, visionConfigured = mode
               <Icon size={18} strokeWidth={1.65} aria-hidden="true" /><span>{label}</span>
             </button>)}
           </nav>
-          {view === "ai" && conversation.loaded && <AgentSessions threads={conversation.threads} selected={conversation.selectedId}
-            select={conversation.select} create={conversation.create} remove={conversation.remove} />}
           <button type="button" className="button secondary theme-toggle" onClick={toggleTheme}>
             {theme === "dark" ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
             {theme === "dark" ? "浅色模式" : "深色模式"}
