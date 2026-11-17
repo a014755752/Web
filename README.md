@@ -52,11 +52,6 @@ npm run build
 node scripts/check-access.mjs
 ```
 
-## 技术文档
-
-- [技术文档 PDF](docs/校园社团活动复盘助手技术文档.pdf)
-- [可编辑 Word 文档](docs/校园社团活动复盘助手技术文档.docx)
-
 ## 团队
 
 | 项目 | 信息 |
@@ -64,4 +59,3 @@ node scripts/check-access.mjs
 | 学校 | 岭南师范学院 |
 | 参赛队员 | 范世博 陈俊良 曾思源 |
 | 指导教师 | 邓海波 |
-

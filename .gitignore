@@ -9,3 +9,5 @@ output/
 public/ocr/
 npm-debug.log*
 ~$*
+docs/
+deploy/
