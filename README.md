@@ -11,7 +11,9 @@ npm ci
 npm run dev
 ```
 
-访问 http://localhost:3000。将 `.env.example` 复制为 `.env.local`，填写 `DEEPSEEK_API_KEY`。对话模型默认使用 `deepseek-flash`，网页搜索、抓取和文件识别分别接入 DeepSeek Search、Fetch、OCR 接口。密钥只在服务端使用。用户选择的文件发送至 OCR 接口，识别文字在用户发送消息后提供给对话模型。模型未配置时，可用本地统计和浏览器 OCR。
+访问 http://localhost:3000。将 `.env.example` 复制为 `.env.local`，填写 `DEEPSEEK_API_KEY`。对话模型默认使用 `deepseek-flash`，网页搜索、抓取和文件识别分别接入 DeepSeek Search、Fetch、OCR 接口。密钥只在服务端使用，不要提交 `.env.local`。用户选择的文件发送至 OCR 接口，识别文字在用户发送消息后提供给对话模型。模型未配置时，可用本地统计和浏览器 OCR。
+
+可选兼容配置为 `MODEL_API_KEY`、`MODEL_BASE_URL`、`MODEL_TEXT`、`MODEL_VISION`、`MODEL_EMBEDDING` 和 `DASHSCOPE_API_KEY`。变量用途见 `.env.example`。
 
 ```sh
 docker build -t campus-review .
@@ -36,6 +38,28 @@ Next.js、TypeScript、Recharts、Apache ECharts、Papa Parse 和 IndexedDB。`/
 
 参考 [DeepSeek 图像理解](https://api-docs.deepseek.com/zh-cn/guides/vision/)、[AI SDK](https://ai-sdk.dev/docs/ai-sdk-core/tools-and-tool-calling)、[CSV AI Analyzer](https://github.com/maxgfr/csv-ai-analyzer)、[Receipt Scanner](https://github.com/sarmakska/receipt-scanner) 和 [Tesseract.js](https://github.com/naptha/tesseract.js)。
 
+## 技术栈
+
+Next.js 16、React 19、TypeScript、AI SDK、DeepSeek API、Recharts、Apache ECharts、Papa Parse、IndexedDB、Docker。
+
+## 检查
+
+```sh
+npm run typecheck
+npm run build
+```
+
+## 技术文档
+
+- [技术文档 PDF](docs/校园社团活动复盘助手技术文档.pdf)
+- [可编辑 Word 文档](docs/校园社团活动复盘助手技术文档.docx)
+
 ## 团队
 
-参赛队员与指导教师按报名信息填写。
+| 项目 | 信息 |
+| --- | --- |
+| 学校 | 待填写 |
+| 参赛队员（1-3 名） | 待填写 |
+| 指导教师（不超过 2 名） | 待填写 |
+
+团队信息按最终报名资料补齐后再提交。
