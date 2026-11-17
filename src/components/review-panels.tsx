@@ -1,13 +1,12 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import Image from "next/image";
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import {
-  ArrowDownLeft, ArrowRight, Check, ChevronRight, CircleAlert, FileText, GitCompareArrows, LoaderCircle, ScanLine, X,
+  ArrowDownLeft, ArrowRight, ChevronRight, CircleAlert, FileText, GitCompareArrows, ScanLine, X,
 } from "lucide-react";
 import { numberLabel, percent, groupLabels, recordKey, scopeLabel, type AnalysisScope, type AttendanceRecord, type Report, type ReportGroup } from "@/lib/attendance";
-import { promptExamples, type AnalysisRun, type AnalysisStep } from "@/lib/analysis-run";
+import type { AnalysisRun } from "@/lib/analysis-run";
 import type { ClubRule } from "@/lib/rules";
 import { ChartPlaceholder } from "./chart-placeholder";
 
@@ -15,63 +14,6 @@ const AttendanceChart = dynamic(() => import("./attendance-chart"), {
   ssr: false,
   loading: () => <div className="chart-canvas"><ChartPlaceholder label="正在加载报名与到场图表" /></div>,
 });
-
-export function AnalysisComposer({ question, setQuestion, analyze, running, useRules, setUseRules, stop, error, steps, run }: {
-  question: string;
-  setQuestion: (value: string) => void;
-  analyze: (question: string) => void;
-  running: boolean;
-  useRules: boolean;
-  setUseRules: (value: boolean) => void;
-  stop: () => void;
-  error: string;
-  steps: AnalysisStep[];
-  run: AnalysisRun | null;
-}) {
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (question.trim() && !running) analyze(question.trim());
-  }
-
-  return (
-    <section className="composer card" aria-labelledby="composer-title">
-      <div className="composer-heading">
-        <Image className="composer-icon" src="/images/review-pencil.webp" width={36} height={36} alt="" unoptimized />
-        <h2 id="composer-title">复盘助手</h2>
-        <label className="rules-toggle">
-          <input type="checkbox" checked={useRules} onChange={(event) => setUseRules(event.target.checked)} disabled={running} />
-          <span>应用社团规则</span>
-        </label>
-      </div>
-      <form className="composer-input" onSubmit={submit}>
-        <input
-          aria-label="复盘问题" value={question} onChange={(event) => setQuestion(event.target.value)}
-          placeholder="想复盘哪些活动或渠道？" maxLength={300} disabled={running}
-        />
-        {running ? <button type="button" className="button secondary" onClick={stop}>停止</button> :
-          <button type="submit" className="button primary analyze-button" disabled={!question.trim()}>
-            开始分析<ArrowRight size={17} />
-          </button>}
-      </form>
-      <div className="composer-footer">
-        <div className="prompt-options" aria-label="推荐问题">
-          {promptExamples.map((item) => <button key={item.label} type="button" className="prompt-chip" onClick={() => analyze(item.question)} disabled={running}>
-            {item.label}
-          </button>)}
-        </div>
-        {running && <span className="running-state" role="status"><LoaderCircle size={15} className="spinning" />正在分析</span>}
-        {run && !running && <span className="run-complete" role="status"><Check size={15} />{run.mode === "agent" ? "模型分析完成" : "本地统计完成"}</span>}
-      </div>
-      {error && <p className="form-error composer-error" role="alert">{error}</p>}
-      {steps.length > 0 && (
-        <details className="run-trace" open={running || undefined}>
-          <summary>分析过程 <span>{steps.length} 步</span></summary>
-          <ol>{steps.map((step, index) => <li key={index}><strong>{step.name}</strong><span>{step.detail}</span></li>)}</ol>
-        </details>
-      )}
-    </section>
-  );
-}
 
 export function FilterBar({ scope, rows, change, reset }: {
   scope: AnalysisScope;

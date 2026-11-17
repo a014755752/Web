@@ -1,9 +1,9 @@
 "use client";
 
 import { Fragment, useId, useState, type FormEvent } from "react";
-import { ArrowLeftRight, ArrowRight, GitCompareArrows, Pencil, Plus } from "lucide-react";
+import { ArrowLeftRight, ArrowRight, GitCompareArrows, MessagesSquare, Pencil, Plus } from "lucide-react";
 import { groupLabels, numberLabel, percent, recordSchema, type AttendanceRecord, type ReportGroup } from "@/lib/attendance";
-import { nextActivityId, reportActivity, type LedgerActivity } from "@/lib/ledger-activities";
+import { compareActivityReports, formatPointChange, nextActivityId, reportActivity, type LedgerActivity } from "@/lib/ledger-activities";
 import type { Attachments } from "@/lib/workspace-store";
 import { RecordsTable } from "./data-panels";
 import { Modal } from "./modal";
@@ -109,7 +109,7 @@ export function ActivityEditor({ mode, activity, rows, close, save }: {
   );
 }
 
-export function ActivityDetail({ activity, attachments, useRules, canCompare, close, editActivity, addChannel, editAttendance, compare, review }: {
+export function ActivityDetail({ activity, attachments, useRules, canCompare, close, editActivity, addChannel, editAttendance, compare, review, aiReview }: {
   activity: LedgerActivity;
   attachments: Attachments;
   useRules: boolean;
@@ -120,6 +120,7 @@ export function ActivityDetail({ activity, attachments, useRules, canCompare, cl
   editAttendance: (row: AttendanceRecord) => void;
   compare: () => void;
   review: () => void;
+  aiReview: () => void;
 }) {
   const { report } = reportActivity(activity, useRules);
   return (
@@ -136,21 +137,14 @@ export function ActivityDetail({ activity, attachments, useRules, canCompare, cl
       <div className="modal-actions activity-detail-actions">
         <button type="button" className="button secondary" onClick={editActivity}><Pencil size={15} />编辑活动</button>
         {canCompare && <button type="button" className="button secondary" onClick={compare}><GitCompareArrows size={15} />对比活动</button>}
-        <button type="button" className="button primary" onClick={review}>复盘此活动<ArrowRight size={15} /></button>
+        <button type="button" className="button secondary" onClick={review}>复盘此活动<ArrowRight size={15} /></button>
+        <button type="button" className="button primary" onClick={aiReview}><MessagesSquare size={15} />AI 复盘</button>
       </div>
     </Modal>
   );
 }
 
 const deltaNumber = new Intl.NumberFormat("zh-CN", { signDisplay: "exceptZero", maximumFractionDigits: 1 });
-
-function pointChange(before: number | null, after: number | null) {
-  return before === null || after === null ? "—" : `${deltaNumber.format((after - before) * 100)} 个百分点`;
-}
-
-function rateChange(before?: ReportGroup, after?: ReportGroup) {
-  return before?.status === "ready" && after?.status === "ready" ? pointChange(before.rate, after.rate) : "—";
-}
 
 function channelRate(group?: ReportGroup) {
   return group ? <><span>{percent(group.rate)}</span>{group.status !== "ready" && <small>{groupLabels[group.status]}</small>}</> : "—";
@@ -168,26 +162,17 @@ export function ActivityComparison({ activities, firstId, useRules, close }: {
   const target = activities.find(({ eventId }) => eventId === targetId);
   if (!baseline || !target) return null;
 
-  const base = reportActivity(baseline, useRules);
-  const comparison = reportActivity(target, useRules);
+  const { base, comparison, rateDelta, coverageDelta, channels } = compareActivityReports(baseline, target, useRules);
   const { totals: baseTotals } = base.report;
   const { totals: targetTotals } = comparison.report;
   const baseKnown = baseTotals.rowCount > baseTotals.missing;
   const targetKnown = targetTotals.rowCount > targetTotals.missing;
-  const baselineRate = base.report.totals.rate;
-  const targetRate = comparison.report.totals.rate;
-  const comparable = (report: typeof base.report) => report.totals.rate !== null &&
-    report.totals.tracked >= report.criteria.minSamples && (report.totals.coverage ?? 0) >= report.criteria.minCoverage;
-  const totalChange = comparable(base.report) && comparable(comparison.report) ? pointChange(baselineRate, targetRate) : "—";
-  const baseChannels = new Map(base.report.groups.map((group) => [group.label, group]));
-  const comparisonChannels = new Map(comparison.report.groups.map((group) => [group.label, group]));
-  const channels = [...new Set([...baseChannels.keys(), ...comparisonChannels.keys()])];
   const metrics = [
     ["报名人数", numberLabel(baseTotals.registered), numberLabel(targetTotals.registered), deltaNumber.format(targetTotals.registered - baseTotals.registered)],
     ["已记录到场", baseKnown ? numberLabel(baseTotals.attended) : "—", targetKnown ? numberLabel(targetTotals.attended) : "—",
       baseKnown && targetKnown ? deltaNumber.format(targetTotals.attended - baseTotals.attended) : "—"],
-    ["到场率", percent(baselineRate), percent(targetRate), totalChange],
-    ["签到覆盖率", percent(baseTotals.coverage), percent(targetTotals.coverage), pointChange(baseTotals.coverage, targetTotals.coverage)],
+    ["到场率", percent(baseTotals.rate), percent(targetTotals.rate), formatPointChange(rateDelta)],
+    ["签到覆盖率", percent(baseTotals.coverage), percent(targetTotals.coverage), formatPointChange(coverageDelta)],
   ];
 
   return (
@@ -216,18 +201,14 @@ export function ActivityComparison({ activities, firstId, useRules, close }: {
             <th scope="row">{name}</th><td>{before}</td><td>{after}</td><td className="comparison-delta">{change}</td>
           </tr>)}</tbody>
         </table></div>
-        {totalChange === "—" && <p className="muted">两场活动都达到样本和签到覆盖门槛后，显示到场率差值。</p>}
+        {rateDelta === null && <p className="muted">两场活动都达到样本和签到覆盖门槛后，显示到场率差值。</p>}
         <h3>各渠道到场率</h3>
         <div className="table-scroll"><table className="data-table comparison-table">
           <thead><tr><th scope="col">宣传渠道</th><th scope="col">基准</th><th scope="col">对照</th><th scope="col">变化</th></tr></thead>
-          <tbody>{channels.map((channel) => {
-            const before = baseChannels.get(channel);
-            const after = comparisonChannels.get(channel);
-            return <tr key={channel}>
-              <th scope="row">{channel}</th><td>{channelRate(before)}</td><td>{channelRate(after)}</td>
-              <td className="comparison-delta">{rateChange(before, after)}</td>
-            </tr>;
-          })}</tbody>
+          <tbody>{channels.map(({ label, before, after, delta }) => <tr key={label}>
+            <th scope="row">{label}</th><td>{channelRate(before)}</td><td>{channelRate(after)}</td>
+            <td className="comparison-delta">{formatPointChange(delta)}</td>
+          </tr>)}</tbody>
         </table></div>
       </div>
     </Modal>

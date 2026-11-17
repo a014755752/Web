@@ -1,4 +1,5 @@
 import { defaultCriteria, defaultScope, type AnalysisScope, type AttendanceRecord, type Criteria } from "./attendance";
+import type { ComparisonInput, ComparisonRun } from "./comparison-run";
 import { activityScope, listActivities } from "./ledger-activities";
 import { applicableRule, keywordRules } from "./rules";
 
@@ -21,28 +22,27 @@ export type AnalysisStep = { name: string; detail: string };
 
 export type AnalysisEvent =
   | { type: "step"; step: AnalysisStep }
-  | { type: "result"; run: AnalysisRun }
+  | { type: "result"; run: AnalysisRun | ComparisonRun }
   | { type: "error"; message: string };
 
 export type AnalysisInput = {
+  kind?: "review";
   question: string;
   rows: AttendanceRecord[];
   scope: AnalysisScope;
   useRules: boolean;
+  fixedScope?: boolean;
+  workflow?: boolean;
 };
 
-export const promptExamples = [
-  { label: "比较渠道表现", question: "按社团复盘规则，哪个宣传渠道值得优先复盘？" },
-  { label: "找出签到缺口", question: "找出需要补录的签到记录。" },
-  { label: "按活动类型分析", question: "按活动类型分组，比较各类型的报名和到场情况。" },
-];
+export type TaskInput = AnalysisInput | ComparisonInput;
 
 function matchingValue(question: string, choices: string[]) {
   const matches = [...new Set(choices)].filter((item) => question.includes(item));
   return matches.length === 1 ? matches[0] : null;
 }
 
-export function runLocalAnalysis({ question, rows, scope, useRules }: AnalysisInput): AnalysisRun {
+export function runLocalAnalysis({ question, rows, scope, useRules, fixedScope }: AnalysisInput): AnalysisRun {
   const identifiers = question.toUpperCase().split(/[^A-Z0-9_-]+/u);
   const activities = listActivities(rows).filter(({ eventId, eventName }) =>
     question.includes(eventName) || identifiers.includes(eventId.toUpperCase()));
@@ -64,13 +64,14 @@ export function runLocalAnalysis({ question, rows, scope, useRules }: AnalysisIn
   }
   nextScope.category = matchingValue(question, rows.map((row) => row.category)) ?? requestedScope.category;
   nextScope.channel = matchingValue(question, rows.map((row) => row.channel)) ?? requestedScope.channel;
-  const rule = useRules ? applicableRule(nextScope) : null;
+  const resolved = fixedScope ? scope : nextScope;
+  const rule = useRules ? applicableRule(resolved) : null;
   return {
     mode: "local",
-    scope: nextScope,
+    scope: resolved,
     criteria: rule?.criteria ?? defaultCriteria,
     ruleId: rule?.id ?? null,
-    sources: useRules ? keywordRules(question, nextScope).map(({ id }) => id) : [],
+    sources: useRules ? keywordRules(question, resolved).map(({ id }) => id) : [],
     retrieval: useRules ? "keyword" : "off",
     focus: /缺口|缺失|补录|待签到/.test(question) ? "missing" : "comparison",
   };

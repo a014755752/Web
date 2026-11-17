@@ -1,6 +1,6 @@
 import {
   MAX_ROWS, defaultCriteria, makeReport, recordKey, recordsSchema,
-  type AnalysisScope, type AttendanceRecord,
+  type AnalysisScope, type AttendanceRecord, type Report,
 } from "./attendance";
 import { applicableRule } from "./rules";
 
@@ -26,6 +26,43 @@ export function reportActivity(activity: LedgerActivity, useRules: boolean) {
   const scope = activityScope(activity);
   const rule = useRules ? applicableRule(scope) : null;
   return { rule, report: makeReport(activity.rows, scope, rule?.criteria ?? defaultCriteria) };
+}
+
+function rateDelta(before: number | null, after: number | null) {
+  return before === null || after === null ? null : (after - before) * 100;
+}
+
+function comparable({ totals, criteria }: Report) {
+  return totals.rate !== null && totals.tracked >= criteria.minSamples && (totals.coverage ?? 0) >= criteria.minCoverage;
+}
+
+export function compareActivityReports(baseline: LedgerActivity, target: LedgerActivity, useRules: boolean) {
+  const base = { activity: baseline, ...reportActivity(baseline, useRules) };
+  const comparison = { activity: target, ...reportActivity(target, useRules) };
+  const before = base.report.totals;
+  const after = comparison.report.totals;
+  const baseChannels = new Map(base.report.groups.map((group) => [group.label, group]));
+  const targetChannels = new Map(comparison.report.groups.map((group) => [group.label, group]));
+  const labels = new Set([...baseChannels.keys(), ...targetChannels.keys()]);
+  return {
+    base, comparison,
+    rateDelta: comparable(base.report) && comparable(comparison.report) ? rateDelta(before.rate, after.rate) : null,
+    coverageDelta: rateDelta(before.coverage, after.coverage),
+    channels: [...labels].map((label) => {
+      const before = baseChannels.get(label);
+      const after = targetChannels.get(label);
+      const delta = before?.status === "ready" && after?.status === "ready" ? rateDelta(before.rate, after.rate) : null;
+      return { label, before, after, delta };
+    }),
+  };
+}
+
+export type ActivityComparisonReport = ReturnType<typeof compareActivityReports>;
+
+const pointFormatter = new Intl.NumberFormat("zh-CN", { signDisplay: "exceptZero", maximumFractionDigits: 1 });
+
+export function formatPointChange(delta: number | null) {
+  return delta === null ? "—" : `${pointFormatter.format(delta)} 个百分点`;
 }
 
 export function nextActivityId(rows: AttendanceRecord[]) {

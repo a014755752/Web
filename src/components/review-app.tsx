@@ -3,27 +3,30 @@
 import Image from "next/image";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { ArrowDownToLine, BookOpen, CalendarDays, ChartNoAxesCombined, FolderOpen, Moon, NotebookPen, Plus, ScanLine, Sun, Upload, X } from "lucide-react";
+import { ArrowDownToLine, BookOpen, CalendarDays, ChartNoAxesCombined, FolderOpen, MessagesSquare, Moon, NotebookPen, Plus, ScanLine, Sun, Upload, X } from "lucide-react";
 import clubMark from "@/app/icon.png";
 import {
   defaultCriteria, defaultScope, makeReport, recordKey, scopeLabel, scopeSchema,
-  type AnalysisScope, type AttendanceRecord, type ReportGroup,
+  type AnalysisScope, type AttendanceRecord, type Report, type ReportGroup,
 } from "@/lib/attendance";
-import { runLocalAnalysis, type AnalysisInput, type AnalysisRun, type AnalysisStep } from "@/lib/analysis-run";
-import { requestAnalysis } from "@/lib/analysis-client";
+import type { AnalysisRun } from "@/lib/analysis-run";
+import type { ScanSource } from "@/lib/attendance-scan";
 import { initialRecords } from "@/lib/activity-ledger";
 import { activityScope, appendLedgerRows, listActivities, validateLedgerRows, type ActivityFields, type LedgerActivity } from "@/lib/ledger-activities";
-import { applicableRule, clubRules } from "@/lib/rules";
+import { applicableRule, clubRules, type ClubRule } from "@/lib/rules";
 import { themeStorageKey, type Theme } from "@/lib/theme";
 import { readLedger, writeLedger, type Attachment, type WorkspaceLedger } from "@/lib/workspace-store";
 import { AttendanceDialog } from "./attendance-dialog";
 import { ActivityComparison, ActivityDetail, ActivityEditor, type ActivityEditorMode } from "./activity-panels";
+import { AiWorkspace, type AiQuestion } from "./ai-workspace";
 import { CsvDialog, downloadCsv, EvidenceDialog, RecordsWorkspace, RulesWorkspace, type CsvImportMode } from "./data-panels";
-import { AnalysisComposer, FilterBar, GroupTable, InsightPanel, Overview, PrintSummary, ScenarioPanel, SummaryCards } from "./review-panels";
+import { FilterBar, GroupTable, InsightPanel, Overview, PrintSummary, ScenarioPanel, SummaryCards } from "./review-panels";
+import { useAiConversation, type AiTurn } from "./use-ai-conversation";
 import VisualDashboard, { preloadVisualCharts } from "./visual-dashboard";
 
 const views = [
   { id: "review", label: "活动复盘", icon: NotebookPen },
+  { id: "ai", label: "AI 对话", icon: MessagesSquare },
   { id: "visual", label: "可视化大屏", icon: ChartNoAxesCombined },
   { id: "data", label: "活动台账", icon: FolderOpen },
   { id: "rules", label: "规则库", icon: BookOpen },
@@ -31,8 +34,8 @@ const views = [
 
 type View = typeof views[number]["id"];
 type Dialog = { type: "csv" } |
-  { type: "scan"; initial: AttendanceRecord | null; eventId?: string } |
-  { type: "evidence"; group: ReportGroup; trial: boolean } |
+  { type: "scan"; initial: AttendanceRecord | null; eventId?: string; taskId?: number } |
+  { type: "evidence"; group: ReportGroup; trial: boolean; context?: { criteria: Report["criteria"]; rule: ClubRule | null } } |
   { type: "activity"; eventId: string } |
   { type: "activity-editor"; mode: ActivityEditorMode; eventId?: string } |
   { type: "compare"; eventId?: string };
@@ -48,14 +51,10 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
   const [scope, setScope] = useState(() => defaultScope(initialRecords));
   const [trialMinimum, setTrialMinimum] = useState<number | null>(null);
   const [useRules, setUseRules] = useState(true);
-  const [question, setQuestion] = useState("");
-  const [steps, setSteps] = useState<AnalysisStep[]>([]);
   const [run, setRun] = useState<AnalysisRun | null>(null);
-  const [running, setRunning] = useState(false);
-  const [analysisError, setAnalysisError] = useState("");
   const [notice, setNotice] = useState("");
   const [ruleAnchor, setRuleAnchor] = useState<string | null>(null);
-  const active = useRef<AbortController | null>(null);
+  const conversation = useAiConversation(modelConfigured);
   const navigationId = useRef(0);
   const navigation = useRef<ViewTransition | null>(null);
 
@@ -79,7 +78,6 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
   }, []);
 
   useEffect(() => () => {
-    active.current?.abort();
     navigationId.current += 1;
     navigation.current?.skipTransition();
   }, []);
@@ -89,9 +87,7 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
     }
   }, [ruleAnchor, view]);
 
-  const rule = !useRules ? null : run
-    ? clubRules.find((entry) => entry.id === run.ruleId) ?? null
-    : applicableRule(scope);
+  const rule = run ? clubRules.find((entry) => entry.id === run.ruleId) ?? null : useRules ? applicableRule(scope) : null;
   const criteria = run?.criteria ?? rule?.criteria ?? defaultCriteria;
   const activities = useMemo(() => listActivities(dataset.rows), [dataset.rows]);
   const dialogEventId = dialog && "eventId" in dialog ? dialog.eventId : undefined;
@@ -111,17 +107,8 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
     try { localStorage.setItem(themeStorageKey, next); } catch { /* The theme still applies to this page. */ }
   }
 
-  function stopAnalysis() {
-    active.current?.abort();
-    active.current = null;
-    setRunning(false);
-  }
-
   function clearAnalysis() {
-    stopAnalysis();
     setRun(null);
-    setSteps([]);
-    setAnalysisError("");
     setTrialMinimum(null);
   }
 
@@ -167,7 +154,10 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
   }
 
   async function saveLedger(next: WorkspaceLedger) {
-    setDataset(storage === "temporary" ? next : await writeLedger(next));
+    const saved = storage === "temporary" ? { ...next, revision: next.revision + 1 } : await writeLedger(next);
+    conversation.stop();
+    setDataset(saved);
+    return saved;
   }
 
   function confirmChange(message: string, nextDialog: Dialog | null = null) {
@@ -201,7 +191,6 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
     await saveLedger({ ...dataset, title: filename.replace(/\.csv$/i, "") || "活动台账", rows: replacement, attachments: {} });
     clearAnalysis();
     setScope(defaultScope(replacement));
-    setQuestion("");
     confirmChange(`已导入 ${replacement.length} 条记录。`);
   }
 
@@ -216,9 +205,29 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
 
   function reviewActivity(activity: LedgerActivity) {
     changeScope(activityScope(activity));
-    setQuestion("");
     setDialog(null);
     selectView("review");
+  }
+
+  function askAi(input: AiQuestion) {
+    if (!ready) return;
+    setNotice("");
+    const common = { question: input.question, rows: dataset.rows, useRules };
+    if (input.kind === "compare") {
+      void conversation.execute({ ...input, ...common }, dataset.revision);
+      return;
+    }
+    const activity = activities.find(({ eventId }) => eventId === input.eventId);
+    void conversation.execute({
+      ...common, scope: activity ? activityScope(activity) : defaultScope(dataset.rows), fixedScope: !!activity, workflow: true,
+    }, dataset.revision);
+  }
+
+  function reviewWithAi(activity: LedgerActivity) {
+    conversation.stop();
+    setDialog(null);
+    selectView("ai");
+    askAi({ kind: "review", eventId: activity.eventId, question: `复盘 ${activity.eventId}，核对签到缺口和渠道表现。` });
   }
 
   async function saveActivity(mode: ActivityEditorMode, record: AttendanceRecord) {
@@ -245,20 +254,36 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
     if (ready) setDialog({ type: "scan", initial: row, eventId });
   }
 
-  async function saveAttendance(key: string, attended: number, photo?: Attachment) {
-    stopAnalysis();
-    setAnalysisError("");
+  function scanForTask(turn: AiTurn, row: AttendanceRecord) {
+    if (ready && turn.revision === dataset.revision) setDialog({ type: "scan", initial: row, taskId: turn.id });
+  }
+
+  async function saveAttendance(key: string, attended: number, photo?: Attachment, source?: ScanSource) {
+    const current = dataset.rows.find((row) => recordKey(row) === key);
+    if (!current || !Number.isInteger(attended) || attended < 0 || attended > current.registered) throw new Error("请核对活动、渠道和到场人数。");
+    const scan = dialog?.type === "scan" ? dialog : undefined;
+    const task = scan?.taskId === undefined ? undefined : conversation.turns.find(({ id }) => id === scan.taskId);
+    if (scan?.taskId !== undefined && (!task || task.revision !== dataset.revision || !scan.initial || recordKey(scan.initial) !== key || current.attended !== null)) {
+      throw new Error("台账已更新，请返回对话重新核对。");
+    }
+
+    const updated = { ...current, attended };
     const attachments = { ...dataset.attachments };
     if (photo) attachments[key] = photo;
     else delete attachments[key];
-    await saveLedger({
+    const saved = await saveLedger({
       ...dataset,
-      rows: dataset.rows.map((row) => recordKey(row) === key ? { ...row, attended } : row),
+      rows: dataset.rows.map((row) => recordKey(row) === key ? updated : row),
       attachments,
     });
-    if (run) setSteps((current) => [...current, { name: "更新签到并重算", detail: `确认到场 ${attended} 人。` }]);
-    const eventId = dialog?.type === "scan" ? dialog.eventId : undefined;
-    confirmChange("已更新签到。", eventId ? { type: "activity", eventId } : null);
+    clearAnalysis();
+    if (task) {
+      setDialog(null);
+      if (storage === "temporary") setNotice("浏览器存储不可用，刷新前请导出台账。");
+      conversation.resume(task, saved, updated, source);
+    } else {
+      confirmChange("已更新签到。", scan?.eventId ? { type: "activity", eventId: scan.eventId } : null);
+    }
   }
 
   function applyRun(result: AnalysisRun) {
@@ -268,54 +293,11 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
     transitionTo("review");
   }
 
-  function applyLocal(input: AnalysisInput) {
-    const result = runLocalAnalysis(input);
-    const calculation = makeReport(input.rows, result.scope, result.criteria);
-    setSteps((previous) => [...previous, {
-      name: "汇总当前数据",
-      detail: `共 ${calculation.totals.rowCount} 条记录、${calculation.groups.length} 组，${calculation.totals.missing} 条签到待补录。`,
-    }]);
-    applyRun(result);
-  }
-
-  async function analyze(query: string) {
-    if (!ready) return;
-    stopAnalysis();
-    setQuestion(query);
-    setSteps([]);
-    setAnalysisError("");
-    if (!scopeValid) {
-      setAnalysisError("请先核对日期范围。");
-      return;
-    }
-    const input = { question: query, rows: dataset.rows, scope, useRules };
-    if (!modelConfigured) {
-      applyLocal(input);
-      return;
-    }
-
-    const request = new AbortController();
-    active.current = request;
-    setRunning(true);
-    try {
-      const result = await requestAnalysis(input, request.signal, (step) => {
-        if (active.current === request) setSteps((current) => [...current, step]);
-      });
-      if (active.current === request) applyRun(result);
-    } catch (cause) {
-      if (active.current !== request) return;
-      const reason = cause instanceof Error ? cause.message : "模型暂时不可用。";
-      setAnalysisError(`${reason} 已使用本地统计。`);
-      applyLocal(input);
-    } finally {
-      if (active.current === request) {
-        active.current = null;
-        setRunning(false);
-      }
-    }
-  }
-
   const openEvidence = (group: ReportGroup, isTrial = false) => setDialog({ type: "evidence", group, trial: isTrial });
+  const openAiEvidence = (group: ReportGroup, result: Report, ruleId: string | null) => setDialog({
+    type: "evidence", group, trial: false,
+    context: { criteria: result.criteria, rule: clubRules.find((rule) => rule.id === ruleId) ?? null },
+  });
   const feedback = notice && <div className="notice" role="status"><span>{notice}</span><button type="button" className="icon-button" aria-label="关闭提示" onClick={() => setNotice("")}><X size={14} /></button></div>;
 
   return (
@@ -353,10 +335,6 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
                   </button>
                 </div>
                 {feedback}
-                <AnalysisComposer question={question} setQuestion={setQuestion} analyze={(query) => void analyze(query)}
-                  running={running} useRules={useRules} setUseRules={(value) => {
-                    clearAnalysis(); setUseRules(value);
-                  }} stop={stopAnalysis} error={analysisError} steps={steps} run={run} />
                 <FilterBar scope={scope} rows={dataset.rows} change={changeScope} reset={() => changeScope(defaultScope(dataset.rows))} />
                 {!scopeValid && <p className="form-error" role="alert">起始日期须早于或等于结束日期。</p>}
                 <SummaryCards report={report} />
@@ -368,6 +346,14 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
                 {report.groups.length > 1 && <ScenarioPanel report={report} trial={trial} change={setTrialMinimum} evidence={openEvidence} />}
               </>
             )}
+
+            {view === "ai" && <>
+              {feedback}
+              <AiWorkspace turns={conversation.turns} activities={activities} revision={dataset.revision} ready={ready}
+                useRules={useRules} setUseRules={(value) => { clearAnalysis(); setUseRules(value); }}
+                ask={askAi} stop={conversation.stop} reset={conversation.reset}
+                actions={{ openActivity, openEvidence: openAiEvidence, openReport: applyRun, openRule, scan: scanForTask }} />
+            </>}
 
             {view === "visual" && (
               <VisualDashboard report={report} theme={theme} evidence={openEvidence}>
@@ -407,17 +393,17 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
 
       {dialog?.type === "csv" && <CsvDialog currentRows={dataset.rows} close={closeDialog} save={importDataset} />}
       {dialog?.type === "scan" && <AttendanceDialog rows={dialogActivity?.rows ?? dataset.rows} initial={dialog.initial}
-        canScan={visionConfigured}
+        canScan={visionConfigured} lockActivity={dialog.taskId !== undefined}
         close={closeDialog} save={saveAttendance} />}
-      {dialog?.type === "evidence" && <EvidenceDialog group={dialog.group} rule={rule}
-        criteria={dialog.trial ? trial.criteria : report.criteria} trial={dialog.trial}
+      {dialog?.type === "evidence" && <EvidenceDialog group={dialog.group} rule={dialog.context ? dialog.context.rule : rule}
+        criteria={dialog.context?.criteria ?? (dialog.trial ? trial.criteria : report.criteria)} trial={dialog.trial}
         attachments={dataset.attachments} close={closeDialog} openRule={openRule} openActivity={openActivity} />}
       {dialog?.type === "activity" && dialogActivity && <ActivityDetail activity={dialogActivity} attachments={dataset.attachments}
         useRules={useRules} canCompare={activities.length > 1} close={closeDialog}
         editActivity={() => setDialog({ type: "activity-editor", mode: "edit", eventId: dialogActivity.eventId })}
         addChannel={() => setDialog({ type: "activity-editor", mode: "channel", eventId: dialogActivity.eventId })}
         editAttendance={(row) => showScan(row, dialogActivity.eventId)} compare={() => setDialog({ type: "compare", eventId: dialogActivity.eventId })}
-        review={() => reviewActivity(dialogActivity)} />}
+        review={() => reviewActivity(dialogActivity)} aiReview={() => reviewWithAi(dialogActivity)} />}
       {dialog?.type === "activity-editor" && (dialog.mode === "create" || dialogActivity) && <ActivityEditor mode={dialog.mode}
         activity={dialogActivity} rows={dataset.rows} close={closeDialog} save={(row) => saveActivity(dialog.mode, row)} />}
       {dialog?.type === "compare" && <ActivityComparison activities={activities} firstId={dialog.eventId} useRules={useRules} close={closeDialog} />}

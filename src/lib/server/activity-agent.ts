@@ -25,6 +25,7 @@ const instructions = [
   "你是校园社团活动复盘助手，帮助负责人比较报名和到场表现。",
   "必须用统计工具获得结果。根据用户请求选择日期、分组和筛选，未指定的字段继承当前范围。",
   "指定单场活动时，根据候选活动设置 eventId 和活动对应的日期、类型。明确要求全部活动时清空 eventId，并按要求扩大日期和类型范围。",
+  "fixedScope 为 true 时，使用输入指定的范围。workflow 为 true 时，先判断签到缺口是否会影响这次复盘；有缺口时查询待补录记录并选择补录，覆盖齐全时比较可用分组。",
   "比较渠道使用 channel，比较活动类型使用 category。明确指定全部时才清空对应筛选值。",
   "先调用 summarize_attendance。启用规则时，统计会检索并应用范围内适用的资料。需再查具体条文时用 search_club_rules。",
   "用户要定位漏登、或者覆盖不足妨碍比较时，统计用 focus=missing，然后调用 list_attendance_records，onlyMissing 取 true。",
@@ -48,11 +49,12 @@ export async function runActivityAgent(
   const activityIds = new Set(activities.map(({ eventId }) => eventId));
   const retrieved = new Map<string, Promise<RetrievedRules>>();
   const ruleSources = new Map<string, Set<string>>();
+  const loggedLookups = new Set<string>();
   const inspectedRecords = new Set<string>();
   let analysis: { run: AnalysisRun; report: Report } | undefined;
 
   function scopeFor(patch?: z.infer<typeof scopePatch>) {
-    const result = scopeSchema.safeParse({ ...(analysis?.run.scope ?? input.scope), ...patch });
+    const result = scopeSchema.safeParse(input.fixedScope ? input.scope : { ...(analysis?.run.scope ?? input.scope), ...patch });
     if (!result.success) return null;
     const { category, channel, eventId } = result.data;
     if ((category && !categories.includes(category)) || (channel && !channels.includes(channel)) ||
@@ -73,10 +75,15 @@ export async function runActivityAgent(
         analysis.run.sources = [...sources];
         if (result.method !== "keyword") analysis.run.retrieval = result.method;
       }
-      onStep({
-        name: "检索复盘规则",
-        detail: `${retrievalLabels[result.method]}检索，${result.documents.map((rule) => rule.title).join("、") || "当前范围无匹配规则"}。`,
-      });
+      const entries = result.documents.map(({ id }) => id).sort();
+      const traceKey = JSON.stringify([scopeKey, result.method, entries]);
+      if (!loggedLookups.has(traceKey)) {
+        loggedLookups.add(traceKey);
+        onStep({
+          name: "检索复盘规则",
+          detail: `${retrievalLabels[result.method]}检索，${result.documents.map((rule) => rule.title).join("、") || "当前范围无匹配规则"}。`,
+        });
+      }
       return result;
     });
     retrieved.set(key, promise);
@@ -108,6 +115,7 @@ export async function runActivityAgent(
         const result = useRules ? await lookup(scope, question) : null;
         const criteria = result?.policy?.criteria ?? defaultCriteria;
         const report = makeReport(rows, scope, criteria);
+        const resolvedFocus = input.workflow ? report.totals.missing ? "missing" : "comparison" : focus ?? "comparison";
         analysis = {
           report,
           run: {
@@ -115,7 +123,7 @@ export async function runActivityAgent(
             ruleId: result?.policy?.id ?? null,
             sources: [...(ruleSources.get(ruleScopeKey(scope)) ?? [])],
             retrieval: result?.method ?? "off",
-            focus: focus ?? "comparison",
+            focus: resolvedFocus,
           },
         };
         onStep({
@@ -123,7 +131,7 @@ export async function runActivityAgent(
           detail: `${scopeLabel(scope)}，${report.totals.rowCount} 条记录，${report.ranked.length} 组可比较，${report.totals.missing} 条待补录。`,
         });
         return {
-          scope, criteria, totals: report.totals,
+          scope, criteria, totals: report.totals, focus: resolvedFocus,
           rules: result?.documents.map(({ id, title, version }) => ({ id, title, version })) ?? [],
           priorities: report.priorities.map(({ label, rate }) => ({ label, rate: percent(rate) })),
           groupCount: report.groups.length,
@@ -140,6 +148,7 @@ export async function runActivityAgent(
         const scope = scopeFor(filters);
         if (!scope) return scopeError;
         const matching = filterRows(rows, scope).filter((row) => !onlyMissing || row.attended === null);
+        if (onlyMissing) matching.sort((a, b) => b.registered - a.registered);
         onStep({
           name: onlyMissing ? "查找待补录记录" : "核对原始活动记录",
           detail: matching.length
@@ -197,6 +206,8 @@ export async function runActivityAgent(
       channels: channels.slice(0, 80),
       activities: candidates.slice(0, 60).map(({ eventId, eventName, date, category }) => ({ eventId, eventName, date, category })),
       useRules,
+      fixedScope: !!input.fixedScope,
+      workflow: !!input.workflow,
     }),
     tools,
     stopWhen: [isStepCount(6), () => analysis?.run.followUp !== undefined],

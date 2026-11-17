@@ -1,17 +1,23 @@
 import { z } from "zod";
-import type { AnalysisEvent } from "@/lib/analysis-run";
+import type { AnalysisEvent, AnalysisStep } from "@/lib/analysis-run";
 import { recordsSchema, scopeSchema } from "@/lib/attendance";
 import { runActivityAgent } from "@/lib/server/activity-agent";
+import { runComparisonAgent } from "@/lib/server/comparison-agent";
 import { modelConfig, modelFailure } from "@/lib/server/model";
 
 export const runtime = "nodejs";
 
-const inputSchema = z.object({
+const common = {
   question: z.string().trim().min(1).max(300),
   rows: recordsSchema,
-  scope: scopeSchema,
   useRules: z.boolean(),
-});
+};
+const inputSchema = z.union([
+  z.object({ ...common, kind: z.literal("review").optional(), scope: scopeSchema, fixedScope: z.boolean().optional(), workflow: z.boolean().optional() }),
+  z.object({ ...common, kind: z.literal("compare"), baselineId: z.string().trim().min(1).max(80), targetId: z.string().trim().min(1).max(80) })
+    .refine(({ baselineId, targetId, rows }) => baselineId !== targetId &&
+      rows.some(({ eventId }) => eventId === baselineId) && rows.some(({ eventId }) => eventId === targetId)),
+]);
 const requestLimit = 1_500_000;
 
 export async function POST(request: Request) {
@@ -45,7 +51,10 @@ export async function POST(request: Request) {
       };
 
       try {
-        const result = await runActivityAgent(parsed.data, config, signal, (step) => emit({ type: "step", step }));
+        const onStep = (step: AnalysisStep) => emit({ type: "step", step });
+        const result = parsed.data.kind === "compare"
+          ? await runComparisonAgent(parsed.data, config, signal, onStep)
+          : await runActivityAgent(parsed.data, config, signal, onStep);
         emit({ type: "result", run: result });
       } catch (error) {
         emit({

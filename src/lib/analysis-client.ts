@@ -1,10 +1,11 @@
-import type { AnalysisEvent, AnalysisInput, AnalysisRun, AnalysisStep } from "./analysis-run";
+import type { AnalysisEvent, AnalysisRun, AnalysisStep, TaskInput } from "./analysis-run";
+import type { ComparisonRun } from "./comparison-run";
 
 export async function requestAnalysis(
-  input: AnalysisInput,
+  input: TaskInput,
   signal: AbortSignal,
   onStep?: (step: AnalysisStep) => void,
-): Promise<AnalysisRun> {
+): Promise<AnalysisRun | ComparisonRun> {
   const response = await fetch("/api/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -20,7 +21,7 @@ export async function requestAnalysis(
 
   const decoder = new TextDecoder();
   let buffer = "";
-  let run: AnalysisRun | null = null;
+  let run: AnalysisRun | ComparisonRun | null = null;
   function consume(line: string) {
     if (!line.trim()) return;
     const event = JSON.parse(line) as AnalysisEvent;

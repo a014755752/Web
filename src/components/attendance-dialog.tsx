@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { FileImage, LoaderCircle, Upload, X } from "lucide-react";
 import { recordKey, type AttendanceRecord } from "@/lib/attendance";
-import { scanResultSchema, type ScanResult } from "@/lib/attendance-scan";
+import { scanResultSchema, type ScanResult, type ScanSource } from "@/lib/attendance-scan";
 import type { Attachment } from "@/lib/workspace-store";
 import { Modal } from "./modal";
 
@@ -18,12 +18,13 @@ function imageUrl(file: File) {
   });
 }
 
-export function AttendanceDialog({ rows, initial, canScan, close, save }: {
+export function AttendanceDialog({ rows, initial, canScan, lockActivity = false, close, save }: {
   rows: AttendanceRecord[];
   initial: AttendanceRecord | null;
   canScan: boolean;
+  lockActivity?: boolean;
   close: () => void;
-  save: (key: string, attended: number, photo?: Attachment) => Promise<void>;
+  save: (key: string, attended: number, photo?: Attachment, source?: ScanSource) => Promise<void>;
 }) {
   const [target, setTarget] = useState(initial ? recordKey(initial) : "");
   const [value, setValue] = useState(initial?.attended?.toString() ?? "");
@@ -33,8 +34,11 @@ export function AttendanceDialog({ rows, initial, canScan, close, save }: {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [reportScope, setReportScope] = useState<ScanResult["scope"] | null>(null);
+  const [mismatch, setMismatch] = useState(false);
+  const [source, setSource] = useState<ScanSource>();
   const active = useRef<AbortController | null>(null);
   const row = rows.find((item) => recordKey(item) === target);
+  const locked = lockActivity ? initial : null;
 
   useEffect(() => () => active.current?.abort(), []);
 
@@ -43,7 +47,7 @@ export function AttendanceDialog({ rows, initial, canScan, close, save }: {
     if (request.signal.aborted) return;
     setAttachment({ name: file.name, url });
     let result: ScanResult | undefined;
-    let method = "本地 OCR";
+    let method: ScanSource = "本地 OCR";
     if (canScan) {
       try {
         const form = new FormData();
@@ -68,8 +72,12 @@ export function AttendanceDialog({ rows, initial, canScan, close, save }: {
     if (request.signal.aborted) return;
 
     setReportScope(result.scope);
+    setSource(method);
+    const conflicts = locked && ((result.eventId !== null && result.eventId !== locked.eventId) ||
+      (result.channel !== null && result.channel !== locked.channel));
+    setMismatch(!!conflicts);
     const matched = rows.find((item) => item.eventId === result.eventId && item.channel === result.channel);
-    setTarget(result.scope === "channel" && matched ? recordKey(matched) : "");
+    setTarget(locked ? recordKey(locked) : result.scope === "channel" && matched ? recordKey(matched) : "");
     setValue(result.attended?.toString() ?? "");
     const hint = result.scope === "event"
       ? "识别为全场汇总。请上传带宣传渠道的签到截图。"
@@ -92,6 +100,8 @@ export function AttendanceDialog({ rows, initial, canScan, close, save }: {
     setMessage("");
     setAttachment(undefined);
     setReportScope(null);
+    setMismatch(false);
+    setSource(undefined);
     setValue("");
     try {
       await inspect(file, request);
@@ -110,7 +120,7 @@ export function AttendanceDialog({ rows, initial, canScan, close, save }: {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || saving || reportScope === "event") return;
+    if (busy || saving || reportScope === "event" || mismatch) return;
     const count = /^\d+$/.test(value) ? Number(value) : Number.NaN;
     if (!row || !Number.isSafeInteger(count) || count > row.registered) {
       setError("请选择记录并输入不超过报名人数的非负整数。");
@@ -119,7 +129,7 @@ export function AttendanceDialog({ rows, initial, canScan, close, save }: {
     setSaving(true);
     setError("");
     try {
-      await save(target, count, attachment);
+      await save(target, count, attachment, source);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "保存失败，请重试。");
     } finally {
@@ -139,6 +149,8 @@ export function AttendanceDialog({ rows, initial, canScan, close, save }: {
                   <button type="button" className="icon-button remove-photo" aria-label="移除截图" disabled={busy || saving} onClick={() => {
                     setAttachment(undefined);
                     setReportScope(null);
+                    setMismatch(false);
+                    setSource(undefined);
                     setMessage("");
                     setError("");
                     setValue(row?.attended?.toString() ?? "");
@@ -159,13 +171,13 @@ export function AttendanceDialog({ rows, initial, canScan, close, save }: {
             <div className="scan-fields">
               {busy && <div className="scan-state" role="status"><LoaderCircle size={16} className="spinning" />正在识别截图…</div>}
               <label className="field">活动与渠道
-                <select value={target} disabled={busy || saving} onChange={(event) => {
+                <select value={target} disabled={busy || saving || !!locked} onChange={(event) => {
                   setTarget(event.target.value);
                   if (!attachment) setValue(rows.find((item) => recordKey(item) === event.target.value)?.attended?.toString() ?? "");
                   setError("");
                 }}>
                   <option value="">选择对应记录</option>
-                  {rows.map((item) => <option key={recordKey(item)} value={recordKey(item)}>{item.eventId} · {item.eventName} · {item.channel}</option>)}
+                  {(locked ? [locked] : rows).map((item) => <option key={recordKey(item)} value={recordKey(item)}>{item.eventId} · {item.eventName} · {item.channel}</option>)}
                 </select>
               </label>
               <label className="field">到场人数
@@ -174,13 +186,14 @@ export function AttendanceDialog({ rows, initial, canScan, close, save }: {
               </label>
               {row && <p className="muted">报名 {row.registered} 人</p>}
               {message && <p className="field-note" role="status">{message}</p>}
+              {mismatch && <p className="form-error" role="alert">截图中的活动或渠道与当前任务不符。请更换截图，或移除截图后手动核对。</p>}
               {error && <p className="form-error" role="alert">{error}</p>}
             </div>
           </div>
         </div>
         <div className="modal-actions">
           <button type="button" className="button secondary" onClick={dismiss} disabled={saving}>取消</button>
-          <button type="submit" className="button primary" disabled={busy || saving || !target || value === "" || reportScope === "event"}>{saving ? "正在保存…" : "保存签到"}</button>
+          <button type="submit" className="button primary" disabled={busy || saving || !target || value === "" || reportScope === "event" || mismatch}>{saving ? "正在保存…" : "保存签到"}</button>
         </div>
       </form>}
     </Modal>
