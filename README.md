@@ -6,6 +6,8 @@
 
 需要 Node.js 22+。
 
+先复制 `.env.example` 为 `.env.local`，设置 `ACCESS_PASSWORD`（至少 8 位）和 `ACCESS_SESSION_SECRET`（至少 32 位随机字符）。未配置时工作台和 API 均拒绝访问。登录后签名会话 Cookie 有效 8 小时，支持退出访问；更改密码或签名密钥会使已有会话失效。所有业务 API 都检查会话，密码仅在登录时发送至服务端，不保存在浏览器存储中。公网部署使用 HTTPS。
+
 ```sh
 npm ci
 npm run dev
@@ -20,7 +22,7 @@ docker build -t campus-review .
 docker run --rm -p 127.0.0.1:3000:3000 --env-file .env.local campus-review
 ```
 
-体验本地统计时，可以省略 `--env-file .env.local`。
+仅使用本地统计时可以不配置 AI 密钥，但仍须通过环境变量设置访问密码和会话签名密钥。
 
 ## 使用
 
@@ -47,6 +49,7 @@ Next.js 16、React 19、TypeScript、AI SDK、DeepSeek API、Recharts、Apache E
 ```sh
 npm run typecheck
 npm run build
+node scripts/check-access.mjs
 ```
 
 ## 技术文档

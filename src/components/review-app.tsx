@@ -24,6 +24,7 @@ import { FilterBar, GroupTable, InsightPanel, Overview, PrintSummary, ScenarioPa
 import { useAiConversation, type AiTurn } from "./use-ai-conversation";
 import { applyLedgerProposal } from "@/lib/ledger-proposal";
 import VisualDashboard, { preloadVisualCharts } from "./visual-dashboard";
+import { AccessControls } from "./access-controls";
 
 const views = [
   { id: "review", label: "活动复盘", icon: NotebookPen },
@@ -388,6 +389,7 @@ export function ReviewApp({ modelConfigured, modelLabel, visionConfigured = mode
             {theme === "dark" ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
             {theme === "dark" ? "浅色模式" : "深色模式"}
           </button>
+          <AccessControls />
         </aside>
 
         <main className="main-shell">

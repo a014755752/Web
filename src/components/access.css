@@ -1,0 +1,13 @@
+.access-page { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: var(--background); }
+.access-card { width: min(100%, 410px); padding: 34px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); box-shadow: 0 12px 44px color-mix(in srgb, var(--shadow) 50%, transparent); }
+.access-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 35px; font-family: var(--editorial); font-size: 20px; font-weight: 650; }
+.access-brand img { border-radius: 8px; }
+.access-heading { display: flex; align-items: center; gap: 9px; }
+.access-heading svg { color: var(--muted); }
+.access-heading h1 { font-size: 23px; letter-spacing: -.03em; }
+.access-description { margin: 10px 0 24px; color: var(--muted); }
+.access-card form { display: grid; gap: 10px; }
+.access-card label { font-size: 13px; font-weight: 550; }
+.access-card input { width: 100%; min-height: 45px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); background: var(--surface-tint); }
+.access-card .button { width: 100%; justify-content: center; min-height: 43px; margin-top: 9px; }
+.access-exit { margin-top: 8px; }

@@ -8,3 +8,4 @@ output/
 .playwright-cli/
 public/ocr/
 npm-debug.log*
+~$*
