@@ -16,9 +16,19 @@ export type AnalysisRun = {
   retrieval: "vector" | "semantic" | "keyword" | "off";
   focus: "comparison" | "missing";
   followUp?: AnalysisFollowUp;
+  note?: string;
 };
 
-export type AnalysisStep = { name: string; detail: string };
+export type ToolTrace = {
+  id: string;
+  key: string;
+  status: "running" | "completed" | "failed" | "stopped";
+  input: string;
+  output?: string;
+  durationMs?: number;
+};
+
+export type AnalysisStep = { name: string; detail: string; tool?: ToolTrace };
 
 export type AnalysisEvent =
   | { type: "step"; step: AnalysisStep }
@@ -33,6 +43,7 @@ export type AnalysisInput = {
   useRules: boolean;
   fixedScope?: boolean;
   workflow?: boolean;
+  context?: string;
 };
 
 export type TaskInput = AnalysisInput | ComparisonInput;

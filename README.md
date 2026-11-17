@@ -24,7 +24,7 @@ docker run --rm -p 127.0.0.1:3000:3000 --env-file .env.local campus-review
 
 「活动台账」支持新建活动、查找并补录渠道签到、比较两场活动和追加 CSV。活动详情可打开单场复盘。台账和截图保存在当前浏览器，可导出 CSV 或保存 PDF 简报。
 
-「AI 对话」可定位签到缺口，核对截图后继续复盘，查看补录前后的结论变化，并比较两场活动和选定下一场改进动作。
+「AI 对话」支持在浏览器保存和切换会话，可在消息中展开工具参数和返回结果。核对签到截图后，原任务继续复盘，并可追问两场活动的差异和下一场改进动作。
 
 「可视化大屏」使用当前数据与筛选条件，可打开流向、散点和热力图对应的记录。[ECharts 桑基图](https://github.com/apache/echarts-examples/blob/gh-pages/public/examples/ts/sankey-simple.ts)、[散点图](https://github.com/apache/echarts-examples/blob/gh-pages/public/examples/ts/scatter-simple.ts)、[热力图](https://github.com/apache/echarts-examples/blob/gh-pages/public/examples/ts/heatmap-cartesian.ts)
 

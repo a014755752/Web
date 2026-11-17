@@ -8,6 +8,7 @@ export type ComparisonInput = {
   baselineId: string;
   targetId: string;
   useRules: boolean;
+  context?: string;
 };
 
 export type ComparisonAction = {
@@ -18,7 +19,7 @@ export type ComparisonAction = {
   record?: AttendanceRecord;
 };
 
-export type ComparisonRun = { kind: "compare"; mode: "agent" | "local"; actionId: string };
+export type ComparisonRun = { kind: "compare"; mode: "agent" | "local"; actionId: string; note?: string };
 
 export function comparisonReport({ rows, baselineId, targetId, useRules }: ComparisonInput) {
   const activities = listActivities(rows);

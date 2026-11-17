@@ -205,7 +205,6 @@ svg { flex-shrink: 0; vertical-align: middle; }
   cursor: pointer;
 }
 .rules-toggle input { width: 15px; height: 15px; accent-color: var(--accent); margin: 0; }
-.running-state { display: flex; align-items: center; gap: 5px; color: var(--accent); font-size: 12px; min-height: 25px; }
 .spinning { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

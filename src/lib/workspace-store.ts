@@ -12,6 +12,7 @@ export type WorkspaceLedger = {
 
 const storeName = "ledgers";
 const ledgerKey = "current";
+const conversationPrefix = "conversation:";
 
 function openDatabase() {
   return new Promise<IDBDatabase>((resolve, reject) => {
@@ -53,6 +54,54 @@ export async function writeLedger(ledger: WorkspaceLedger) {
         conflict = (saved?.revision ?? 0) !== ledger.revision;
         if (conflict) transaction.abort();
         else store.put(next, ledgerKey);
+      };
+    });
+  } finally {
+    database.close();
+  }
+}
+
+export async function readConversations<T>() {
+  const database = await openDatabase();
+  try {
+    return await new Promise<T[]>((resolve, reject) => {
+      const range = IDBKeyRange.bound(conversationPrefix, `${conversationPrefix}\uffff`);
+      const request = database.transaction(storeName).objectStore(storeName).getAll(range);
+      request.onsuccess = () => resolve(request.result as T[]);
+      request.onerror = () => reject(request.error);
+    });
+  } finally {
+    database.close();
+  }
+}
+
+export async function writeConversation<T extends {
+  id: string; updatedAt: number; turns: { id: string; startedAt?: number; updatedAt?: number }[];
+}>(conversation: T) {
+  const database = await openDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(storeName, "readwrite");
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => reject(transaction.error);
+      const store = transaction.objectStore(storeName);
+      const key = conversationPrefix + conversation.id;
+      const request = store.get(key);
+      request.onsuccess = () => {
+        const previous = request.result as T | undefined;
+        if (!previous) {
+          store.put(conversation, key);
+          return;
+        }
+        const turns = new Map(previous.turns.map((turn) => [turn.id, turn]));
+        for (const turn of conversation.turns) {
+          const old = turns.get(turn.id);
+          if (!old || (old.updatedAt ?? 0) <= (turn.updatedAt ?? 0)) turns.set(turn.id, turn);
+        }
+        store.put({
+          ...conversation, updatedAt: Math.max(conversation.updatedAt, previous.updatedAt),
+          turns: [...turns.values()].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0)),
+        }, key);
       };
     });
   } finally {

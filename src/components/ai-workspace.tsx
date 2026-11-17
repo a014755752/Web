@@ -1,13 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { useState, type FormEvent } from "react";
-import { ArrowRight, ArrowUp, ChartNoAxesCombined, Check, ChevronRight, FileText, GitCompareArrows, LoaderCircle, Plus, ScanLine, Square } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { ArrowDown, ArrowRight, ArrowUp, ChartNoAxesCombined, Check, ChevronRight, Copy, FileText, GitCompareArrows, LoaderCircle, PanelRight, Paperclip, Plus, RotateCcw, ScanLine, Square, X } from "lucide-react";
 import { groupLabels, numberLabel, percent, scopeLabel, type AttendanceRecord, type Report, type ReportGroup } from "@/lib/attendance";
 import type { AnalysisRun } from "@/lib/analysis-run";
 import { formatPointChange, type LedgerActivity } from "@/lib/ledger-activities";
 import { clubRules } from "@/lib/rules";
-import type { AiTurn } from "./use-ai-conversation";
+import { ToolCalls, ToolInspectorList } from "./agent-tools";
+import { conversationTitle, type AiConversation, type AiTurn } from "./use-ai-conversation";
 import "./ai-workspace.css";
 
 export type AiQuestion =
@@ -19,7 +20,8 @@ type AiActions = {
   openEvidence: (group: ReportGroup, report: Report, ruleId: string | null) => void;
   openReport: (run: AnalysisRun) => void;
   openRule: (id: string) => void;
-  scan: (turn: AiTurn, row: AttendanceRecord) => void;
+  scan: (turn: AiTurn, row: AttendanceRecord, file?: File) => void;
+  retry: (turn: AiTurn) => void;
 };
 
 const reviewQuestion = "核对签到缺口，判断哪个宣传渠道值得优先复盘。";
@@ -60,16 +62,24 @@ function ActivitySelect({ label, value, activities, exclude, all, disabled, chan
   );
 }
 
-export function AiWorkspace({ turns, activities, revision, ready, useRules, setUseRules, ask, stop, reset, actions }: {
+export function AiWorkspace({ turns, threads, selected, select, create, activities, ledgerTitle, modelLabel, notice, storageWarning,
+  revision, ready, useRules, setUseRules, ask, stop, actions }: {
   turns: AiTurn[];
+  threads: AiConversation[];
+  selected: string;
+  select: (id: string) => void;
+  create: () => void;
   activities: LedgerActivity[];
+  ledgerTitle: string;
+  modelLabel?: string;
+  notice?: React.ReactNode;
+  storageWarning: boolean;
   revision: number;
   ready: boolean;
   useRules: boolean;
   setUseRules: (value: boolean) => void;
   ask: (value: AiQuestion) => void;
   stop: () => void;
-  reset: () => void;
   actions: AiActions;
 }) {
   const lastResult = turns.at(-1)?.result;
@@ -79,6 +89,10 @@ export function AiWorkspace({ turns, activities, revision, ready, useRules, setU
   const [baselineId, setBaselineId] = useState(() => lastResult?.kind === "compare" ? lastResult.report.base.activity.eventId : "");
   const [targetId, setTargetId] = useState(() => lastResult?.kind === "compare" ? lastResult.report.comparison.activity.eventId : "");
   const [formError, setFormError] = useState("");
+  const [inspector, setInspector] = useState(false);
+  const [awayFromEnd, setAwayFromEnd] = useState(false);
+  const scroller = useRef<HTMLDivElement>(null);
+  const pinned = useRef(true);
   const latest = turns.at(-1);
   const working = latest?.status === "running";
   const reviewContext = latest?.result?.kind === "review" ? latest.result.run.scope.eventId : undefined;
@@ -91,12 +105,36 @@ export function AiWorkspace({ turns, activities, revision, ready, useRules, setU
   const currentTarget = activities.find(({ eventId }) => eventId === (targetId || activityId)) ?? activities[0];
   const defaultBase = previousActivity(activities, currentTarget) ?? activities.find(({ eventId }) => eventId !== currentTarget?.eventId);
   const currentBaseline = activities.find(({ eventId }) => eventId === baselineId && eventId !== currentTarget?.eventId) ?? defaultBase;
+  const pending = lastResult?.kind === "review" ? lastResult.pending : lastResult?.action.record;
+  const attachmentTask = pending && latest?.status === "completed" && latest.revision === revision ? latest : undefined;
+  const latestMissing = activities.find(({ rows }) => rows.some(({ attended }) => attended === null));
+  const missingCount = activities.reduce((sum, { rows }) => sum + rows.filter(({ attended }) => attended === null).length, 0);
+
+  useEffect(() => { setInspector(window.matchMedia("(min-width: 1250px)").matches); }, []);
+
+  useLayoutEffect(() => {
+    if (pinned.current && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
+  }, [turns]);
+
+  function jumpToEnd() {
+    pinned.current = true;
+    if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
+    setAwayFromEnd(false);
+  }
 
   function compare(question: string, before: LedgerActivity, after: LedgerActivity) {
     setKind("compare");
     setBaselineId(before.eventId);
     setTargetId(after.eventId);
+    jumpToEnd();
     ask({ kind: "compare", question, baselineId: before.eventId, targetId: after.eventId });
+  }
+
+  function startReview(question: string, id?: string) {
+    setKind("review");
+    setReviewId(id ?? "");
+    jumpToEnd();
+    ask({ kind: "review", question, eventId: id });
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -116,47 +154,74 @@ export function AiWorkspace({ turns, activities, revision, ready, useRules, setU
       compare(query || compareQuestion, before, after);
     } else {
       const eventId = /所有活动|全部活动|全学期/u.test(query) ? undefined : mentioned[0]?.eventId ?? (activityId || undefined);
-      setReviewId(eventId ?? "");
-      ask({ kind: "review", question: query || reviewQuestion, eventId });
+      startReview(query || reviewQuestion, eventId);
     }
     setFormError("");
     setDraft("");
   }
 
-  function newConversation() {
-    reset();
-    setKind("review");
-    setDraft("");
-    setReviewId(null);
-    setBaselineId("");
-    setTargetId("");
-    setFormError("");
+  function attach(file?: File) {
+    if (file && pending && attachmentTask) actions.scan(attachmentTask, pending, file);
   }
 
   return (
-    <>
-      <header className="page-heading">
-        <div className="ai-page-title"><Image className="composer-icon" src="/images/review-pencil.webp" width={36} height={36} alt="" unoptimized /><h1>AI 对话</h1></div>
-        {turns.length > 0 && <button type="button" className="button secondary" onClick={newConversation}><Plus size={16} />新对话</button>}
+    <div className="agent-workspace">
+      <header className="agent-header">
+        <div className="ai-page-title"><Image className="composer-icon" src="/images/review-pencil.webp" width={32} height={32} alt="" unoptimized /><h1>AI 对话</h1></div>
+        <div className="agent-header-actions">
+          <select className="agent-session-picker" aria-label="切换对话" value={selected} onChange={(event) => select(event.target.value)}>
+            {threads.map((thread) => <option value={thread.id} key={thread.id}>{conversationTitle(thread)}</option>)}
+          </select>
+          <button type="button" className="button secondary small-button agent-new" onClick={create}><Plus size={16} />新对话</button>
+          <button type="button" className="button secondary small-button" aria-expanded={inspector} aria-controls="agent-inspector"
+            onClick={() => setInspector(!inspector)}><PanelRight size={16} />工具面板</button>
+        </div>
       </header>
-      <div className="ai-layout">
-        <div className="ai-main">
-          <form className="card ai-composer" aria-label="向 AI 提问" onSubmit={submit}>
+      <div className="agent-body">
+        <div className="agent-main">
+          <div ref={scroller} className="agent-scroll" aria-label="对话记录" onScroll={(event) => {
+            const node = event.currentTarget;
+            pinned.current = node.scrollHeight - node.clientHeight - node.scrollTop < 95;
+            setAwayFromEnd(!pinned.current);
+          }}>
+            <div className="agent-thread">
+              {notice}
+              {storageWarning && <p className="form-error" role="status">对话暂时无法保存到浏览器。</p>}
+              {!turns.length && <section className="agent-start" aria-labelledby="agent-start-title">
+                <h2 id="agent-start-title">这次要复盘什么？</h2>
+                <div className="agent-suggestions">
+                  <button type="button" disabled={!ready} onClick={() => startReview(reviewQuestion, (latestMissing ?? currentTarget)?.eventId)}>
+                    <ScanLine size={20} /><strong>查找签到缺口</strong><span>{latestMissing?.eventName ?? '核对报名和签到记录'}</span><ChevronRight size={16} /></button>
+                  {currentBaseline && currentTarget && <button type="button" disabled={!ready} onClick={() => compare(compareQuestion, currentBaseline, currentTarget)}>
+                    <GitCompareArrows size={20} /><strong>对比两场活动</strong><span>{currentBaseline.eventId} → {currentTarget.eventId}</span><ChevronRight size={16} /></button>}
+                  <button type="button" disabled={!ready} onClick={() => startReview("按活动类型汇总全学期的报名、到场和签到覆盖率。") }>
+                    <ChartNoAxesCombined size={20} /><strong>汇总各活动类型</strong><span>全学期活动</span><ChevronRight size={16} /></button>
+                </div>
+              </section>}
+              {turns.map((turn) => <TurnCard key={turn.id} turn={turn} stale={turn.revision !== revision} actions={actions} current={latest?.id === turn.id}
+                modelLabel={modelLabel} canRetry={!working && ready}
+                comparePrevious={latest?.id === turn.id && reviewedActivity && previousReviewed ? () => compare(compareQuestion, previousReviewed, reviewedActivity) : undefined} />)}
+            </div>
+          </div>
+
+          <div className="agent-dock">
+            {awayFromEnd && <button type="button" className="button secondary small-button agent-jump" onClick={jumpToEnd}><ArrowDown size={15} />回到最新消息</button>}
+            <form className="ai-composer" aria-label="向 AI 提问" onSubmit={submit}>
             <div className="ai-composer-head">
               <div className="segmented" role="group" aria-label="分析任务">
                 <button type="button" aria-pressed={kind === "review"} disabled={working} onClick={() => { setKind("review"); setFormError(""); }}>活动复盘</button>
                 <button type="button" aria-pressed={kind === "compare"} disabled={working} onClick={() => { setKind("compare"); setFormError(""); }}>两场对比</button>
               </div>
+              <div className="ai-selection">
+                {kind === "review" ? <ActivitySelect label="复盘范围" value={activityId} activities={activities} all disabled={!!working} change={setReviewId} /> : <>
+                  <ActivitySelect label="基准活动" value={currentBaseline?.eventId ?? ""} exclude={currentTarget?.eventId} activities={activities} disabled={!!working} change={setBaselineId} />
+                  <ActivitySelect label="对照活动" value={currentTarget?.eventId ?? ""} exclude={currentBaseline?.eventId} activities={activities} disabled={!!working} change={setTargetId} />
+                </>}
+              </div>
               <label className="rules-toggle"><input type="checkbox" checked={useRules} disabled={working} onChange={(event) => setUseRules(event.target.checked)} />应用社团规则</label>
             </div>
-            <div className="ai-selection">
-              {kind === "review" ? <ActivitySelect label="复盘范围" value={activityId} activities={activities} all disabled={!!working} change={setReviewId} /> : <>
-                <ActivitySelect label="基准活动" value={currentBaseline?.eventId ?? ""} exclude={currentTarget?.eventId} activities={activities} disabled={!!working} change={setBaselineId} />
-                <ActivitySelect label="对照活动" value={currentTarget?.eventId ?? ""} exclude={currentBaseline?.eventId} activities={activities} disabled={!!working} change={setTargetId} />
-              </>}
-            </div>
             <label className="sr-only" htmlFor="ai-question">复盘问题</label>
-            <textarea id="ai-question" rows={2} maxLength={300} value={draft} disabled={working} enterKeyHint="send"
+            <textarea id="ai-question" rows={2} maxLength={300} value={draft} enterKeyHint="send"
               placeholder={kind === "review" ? "例如，查一下这场活动的签到缺口，判断哪个渠道值得优先复盘。" : "例如，重点比较公众号，为下一场活动安排一条改进动作。"}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229 && draft.trim()) {
@@ -164,34 +229,52 @@ export function AiWorkspace({ turns, activities, revision, ready, useRules, setU
                   event.currentTarget.form?.requestSubmit();
                 }
               }}
+              onPaste={(event) => {
+                if (!attachmentTask || !pending) return;
+                const image = [...event.clipboardData.files].find((file) => ["image/png", "image/jpeg"].includes(file.type));
+                if (image) { event.preventDefault(); attach(image); }
+              }}
               onChange={(event) => { setDraft(event.target.value); setFormError(""); }} />
             <div className="ai-composer-actions">
+              {attachmentTask && <label className="button secondary small-button file-button">
+                <Paperclip size={16} />上传签到截图
+                <input type="file" accept="image/png,image/jpeg" onChange={(event) => { attach(event.target.files?.[0]); event.target.value = ""; }} />
+              </label>}
+              <span className="agent-key-hint">Enter 发送 · Shift+Enter 换行</span>
               {working ? <button type="button" className="button secondary" onClick={stop}><Square size={14} />停止分析</button> :
                 <button type="submit" className="button primary" disabled={!ready}><ArrowUp size={16} />{draft.trim() ? "发送" : kind === "review" ? "开始 AI 复盘" : "开始 AI 对比"}</button>}
             </div>
             {formError && <p className="form-error" role="alert">{formError}</p>}
-          </form>
-
-          {latest && <TurnCard turn={latest} stale={latest.revision !== revision} actions={actions} current
-            comparePrevious={reviewedActivity && previousReviewed ? () => compare(compareQuestion, previousReviewed, reviewedActivity) : undefined} />}
-
-          {turns.length > 1 && <details className="card ai-history">
-            <summary>本次对话记录 <span>{turns.length - 1} 条</span></summary>
-            {turns.slice(0, -1).reverse().map((turn) => <TurnCard key={turn.id} turn={turn} stale={turn.revision !== revision} actions={actions} />)}
-          </details>}
+            </form>
+          </div>
         </div>
 
-        {latest && <aside className="card ai-trace" aria-labelledby="ai-trace-heading">
-          <h2 id="ai-trace-heading">任务过程</h2>
-          {latest.steps.length > 0 && <ol>{latest.steps.map((step, index) => <li key={index}>
-            <span className="ai-step-icon"><Check size={13} aria-hidden="true" /></span>
-            <div><strong>{step.name}</strong><p>{step.detail}</p></div>
-          </li>)}</ol>}
-          {working && <p className="running-state" role="status"><LoaderCircle size={16} className="spinning" />{latest.before ? "正在重算复盘结论" : "正在查询台账和分析口径"}</p>}
-          <RuleSources turn={latest} open={actions.openRule} />
+        {inspector && <aside id="agent-inspector" className="agent-inspector" aria-labelledby="agent-inspector-title" onKeyDown={(event) => {
+          if (event.key === "Escape") setInspector(false);
+        }}>
+          <header><h2 id="agent-inspector-title">工具面板</h2><button className="icon-button" type="button" aria-label="关闭工具面板" onClick={() => setInspector(false)}><X size={17} /></button></header>
+          <section className="agent-inspector-scope">
+            <h3>台账上下文</h3><strong>{ledgerTitle}</strong>
+            <p>{activities.length} 场活动 · {missingCount} 条签到待补录</p>
+            {currentTarget && <button type="button" className="link-button" onClick={() => actions.openActivity(currentTarget.eventId)}>{currentTarget.eventName}<ChevronRight size={14} /></button>}
+          </section>
+          {latest && <ToolInspectorList turn={latest} inspect={(id) => {
+            const item = document.getElementById(id);
+            if (!(item instanceof HTMLDetailsElement)) return;
+            item.open = true;
+            if (window.matchMedia("(max-width: 1020px)").matches) setInspector(false);
+            requestAnimationFrame(() => item.scrollIntoView({ block: "nearest" }));
+          }} />}
+          {!latest && latestMissing && <section className="agent-inspector-scope">
+            <h3>待核对签到</h3>
+            {activities.filter(({ rows }) => rows.some(({ attended }) => attended === null)).slice(0, 4).map((activity) => <button key={activity.eventId}
+              className="agent-inspector-link" type="button" disabled={!ready} onClick={() => startReview(reviewQuestion, activity.eventId)}>
+              <ScanLine size={15} /><span>{activity.eventName}</span><ChevronRight size={14} />
+            </button>)}
+          </section>}
         </aside>}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -213,26 +296,50 @@ function RuleSources({ turn, open }: { turn: AiTurn; open: AiActions["openRule"]
   );
 }
 
-function TurnCard({ turn, stale, actions, current = false, comparePrevious }: {
+function TurnCard({ turn, stale, actions, current = false, comparePrevious, modelLabel, canRetry }: {
   turn: AiTurn;
   stale: boolean;
   actions: AiActions;
   current?: boolean;
   comparePrevious?: () => void;
+  modelLabel?: string;
+  canRetry: boolean;
 }) {
   const { result, status } = turn;
+  const [copyStatus, setCopyStatus] = useState("");
   const canAct = current && !stale && status === "completed";
   const mode = result?.kind === "review" ? result.run.mode : result?.mode;
   const title = result?.kind === "review"
     ? result.report.rows.find(({ eventId }) => eventId === result.run.scope.eventId)?.eventName ?? scopeLabel(result.run.scope)
     : "两场活动对比";
+  const note = result?.kind === "review" ? result.run.note : result?.note;
+
+  async function copyAnswer() {
+    if (!result) return;
+    const body = result.kind === "review"
+      ? `报名 ${result.report.totals.registered} 人 · 已记录到场 ${result.report.totals.attended} 人 · 覆盖 ${percent(result.report.totals.coverage)}`
+      : `${result.report.base.activity.eventName} → ${result.report.comparison.activity.eventName}\n到场率变化 ${formatPointChange(result.report.rateDelta)}\n${result.action.title}\n${result.action.detail}`;
+    try {
+      await navigator.clipboard.writeText([title, body, note].filter(Boolean).join("\n"));
+      setCopyStatus("已复制");
+    } catch {
+      setCopyStatus("无法复制");
+    }
+  }
+
   return (
     <section className="ai-turn" aria-label="对话结果">
-      <p className="ai-question">{turn.question}</p>
+      <div className="agent-user-message"><span>你</span><p className="ai-question">{turn.question}</p></div>
+      <div className="agent-reply-head">
+        <span className="agent-reply-mark"><ChartNoAxesCombined size={16} /></span><strong>复盘助手</strong>
+        {modelLabel && (mode === "agent" || (!mode && status === "running")) && <span>{modelLabel}</span>}
+      </div>
+      <ToolCalls turn={turn} />
       {status === "stopped" && <p className="muted" role="status">分析已停止。</p>}
       {turn.warning && <p className="form-error" role="status">{turn.warning}</p>}
       {stale && result && status !== "running" && <p className="muted">这条结论来自更新前的台账。发送同一问题可按最新数据重算。</p>}
-      {!result && status === "running" && <p className="card ai-answer muted" role="status"><LoaderCircle className="spinning" size={15} />{turn.steps.at(-1)?.name ?? "正在执行分析"}…</p>}
+      {status === "running" && <p className="agent-running muted" role="status"><LoaderCircle className="spinning" size={15} />{turn.before ? "正在继续复盘" : "正在分析问题"}…</p>}
+      {note && status !== "running" && <p className="agent-reply-copy">{note}</p>}
       {result && <div className="card ai-answer">
         <div className="ai-answer-heading">
           <h2>{title}</h2>
@@ -242,6 +349,12 @@ function TurnCard({ turn, stale, actions, current = false, comparePrevious }: {
           <ComparisonAnswer turn={turn} result={result} canAct={canAct} stale={stale} actions={actions} />}
         {canAct && result.kind === "review" && !result.pending && comparePrevious && <button type="button" className="button secondary small-button"
           onClick={comparePrevious}><GitCompareArrows size={15} />与上一场同类型活动对比</button>}
+      </div>}
+      <RuleSources turn={turn} open={actions.openRule} />
+      {status !== "running" && <div className="agent-message-actions">
+        {result && <button type="button" className="link-button" onClick={() => void copyAnswer()}><Copy size={15} />复制结果</button>}
+        {canRetry && <button type="button" className="link-button" onClick={() => actions.retry(turn)}><RotateCcw size={15} />重新运行</button>}
+        {copyStatus && <span role="status">{copyStatus}</span>}
       </div>}
     </section>
   );
@@ -269,6 +382,7 @@ function ReviewAnswer({ turn, result, active, canAct, stale, actions }: {
       </div>
       {pending && <div className="ai-finding ai-finding-warning">
         <div>
+          <div className="agent-approval-label"><ScanLine size={15} /><code>confirm_attendance</code><span>{active ? "运行中" : "等待确认"}</span></div>
           <h3>{active ? "正在复核补录结果" : "需要核对签到"}</h3>
           <p>{pending.eventId} · {pending.eventName} · {pending.channel}，报名 {numberLabel(pending.registered)} 人。{report.totals.missing > 1 && ` 当前共 ${report.totals.missing} 条待补录。`}</p>
           {priority && !active && <p>当前可比较渠道优先核查{priorities(report)}。</p>}

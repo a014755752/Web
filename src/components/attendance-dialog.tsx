@@ -18,9 +18,10 @@ function imageUrl(file: File) {
   });
 }
 
-export function AttendanceDialog({ rows, initial, canScan, lockActivity = false, close, save }: {
+export function AttendanceDialog({ rows, initial, initialFile, canScan, lockActivity = false, close, save }: {
   rows: AttendanceRecord[];
   initial: AttendanceRecord | null;
+  initialFile?: File;
   canScan: boolean;
   lockActivity?: boolean;
   close: () => void;
@@ -41,6 +42,12 @@ export function AttendanceDialog({ rows, initial, canScan, lockActivity = false,
   const locked = lockActivity ? initial : null;
 
   useEffect(() => () => active.current?.abort(), []);
+
+  useEffect(() => {
+    if (!initialFile) return;
+    const frame = requestAnimationFrame(() => void load(initialFile));
+    return () => cancelAnimationFrame(frame);
+  }, [initialFile]);
 
   async function inspect(file: File, request: AbortController) {
     const url = await imageUrl(file);

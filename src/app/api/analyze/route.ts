@@ -11,6 +11,7 @@ const common = {
   question: z.string().trim().min(1).max(300),
   rows: recordsSchema,
   useRules: z.boolean(),
+  context: z.string().max(1800).optional(),
 };
 const inputSchema = z.union([
   z.object({ ...common, kind: z.literal("review").optional(), scope: scopeSchema, fixedScope: z.boolean().optional(), workflow: z.boolean().optional() }),

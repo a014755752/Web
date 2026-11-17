@@ -18,6 +18,7 @@ import { themeStorageKey, type Theme } from "@/lib/theme";
 import { readLedger, writeLedger, type Attachment, type WorkspaceLedger } from "@/lib/workspace-store";
 import { AttendanceDialog } from "./attendance-dialog";
 import { ActivityComparison, ActivityDetail, ActivityEditor, type ActivityEditorMode } from "./activity-panels";
+import { AgentSessions } from "./agent-tools";
 import { AiWorkspace, type AiQuestion } from "./ai-workspace";
 import { CsvDialog, downloadCsv, EvidenceDialog, RecordsWorkspace, RulesWorkspace, type CsvImportMode } from "./data-panels";
 import { FilterBar, GroupTable, InsightPanel, Overview, PrintSummary, ScenarioPanel, SummaryCards } from "./review-panels";
@@ -34,7 +35,7 @@ const views = [
 
 type View = typeof views[number]["id"];
 type Dialog = { type: "csv" } |
-  { type: "scan"; initial: AttendanceRecord | null; eventId?: string; taskId?: number } |
+  { type: "scan"; initial: AttendanceRecord | null; eventId?: string; taskId?: string; file?: File } |
   { type: "evidence"; group: ReportGroup; trial: boolean; context?: { criteria: Report["criteria"]; rule: ClubRule | null } } |
   { type: "activity"; eventId: string } |
   { type: "activity-editor"; mode: ActivityEditorMode; eventId?: string } |
@@ -42,7 +43,9 @@ type Dialog = { type: "csv" } |
 
 const initialData: WorkspaceLedger = { revision: 0, title: "2026 秋季活动台账", rows: initialRecords, attachments: {} };
 
-export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured }: { modelConfigured: boolean; visionConfigured?: boolean }) {
+export function ReviewApp({ modelConfigured, modelLabel, visionConfigured = modelConfigured }: {
+  modelConfigured: boolean; modelLabel?: string; visionConfigured?: boolean;
+}) {
   const [theme, setTheme] = useState<Theme>("light");
   const [dataset, setDataset] = useState(initialData);
   const [storage, setStorage] = useState<"opening" | "ready" | "temporary">("opening");
@@ -60,6 +63,12 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
 
   useEffect(() => {
     setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+    function openConversationFromLink() {
+      if (window.location.hash === "#ai") setView("ai");
+    }
+    openConversationFromLink();
+    window.addEventListener("hashchange", openConversationFromLink);
+    return () => window.removeEventListener("hashchange", openConversationFromLink);
   }, []);
 
   useEffect(() => {
@@ -124,6 +133,10 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
     function commit() {
       if (id !== navigationId.current) return;
       setView(next);
+      if (next === "ai" || window.location.hash === "#ai") {
+        const { pathname, search } = window.location;
+        window.history.replaceState(window.history.state, "", pathname + search + (next === "ai" ? "#ai" : ""));
+      }
       if (scrollTop) window.scrollTo(0, 0);
     }
 
@@ -155,7 +168,7 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
 
   async function saveLedger(next: WorkspaceLedger) {
     const saved = storage === "temporary" ? { ...next, revision: next.revision + 1 } : await writeLedger(next);
-    conversation.stop();
+    conversation.stopAll();
     setDataset(saved);
     return saved;
   }
@@ -210,7 +223,7 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
   }
 
   function askAi(input: AiQuestion) {
-    if (!ready) return;
+    if (!ready || !conversation.loaded) return;
     setNotice("");
     const common = { question: input.question, rows: dataset.rows, useRules };
     if (input.kind === "compare") {
@@ -221,6 +234,28 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
     void conversation.execute({
       ...common, scope: activity ? activityScope(activity) : defaultScope(dataset.rows), fixedScope: !!activity, workflow: true,
     }, dataset.revision);
+  }
+
+  function retryAi(turn: AiTurn) {
+    if (!ready || !conversation.loaded) return;
+    const request = turn.request;
+    const common = { question: turn.question, rows: dataset.rows, useRules: turn.useRules };
+    setNotice("");
+    if (request.kind === "compare") {
+      if (!activities.some(({ eventId }) => eventId === request.baselineId) || !activities.some(({ eventId }) => eventId === request.targetId)) {
+        setNotice("对比对象已从台账移除，请重新选择活动。");
+        return;
+      }
+      void conversation.execute({ ...request, ...common }, dataset.revision);
+      return;
+    }
+    const eventId = request.scope.eventId;
+    const activity = activities.find((item) => item.eventId === eventId);
+    if (request.fixedScope && eventId && !activity) {
+      setNotice("这场活动已从台账移除，请重新选择活动。");
+      return;
+    }
+    void conversation.execute({ ...common, scope: activity ? activityScope(activity) : defaultScope(dataset.rows), fixedScope: !!activity, workflow: true }, dataset.revision);
   }
 
   function reviewWithAi(activity: LedgerActivity) {
@@ -254,8 +289,8 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
     if (ready) setDialog({ type: "scan", initial: row, eventId });
   }
 
-  function scanForTask(turn: AiTurn, row: AttendanceRecord) {
-    if (ready && turn.revision === dataset.revision) setDialog({ type: "scan", initial: row, taskId: turn.id });
+  function scanForTask(turn: AiTurn, row: AttendanceRecord, file?: File) {
+    if (ready && turn.revision === dataset.revision) setDialog({ type: "scan", initial: row, taskId: turn.id, file });
   }
 
   async function saveAttendance(key: string, attended: number, photo?: Attachment, source?: ScanSource) {
@@ -315,6 +350,8 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
               <Icon size={18} strokeWidth={1.65} aria-hidden="true" /><span>{label}</span>
             </button>)}
           </nav>
+          {view === "ai" && conversation.loaded && <AgentSessions threads={conversation.threads} selected={conversation.selectedId}
+            select={conversation.select} create={conversation.create} />}
           <button type="button" className="button secondary theme-toggle" onClick={toggleTheme}>
             {theme === "dark" ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
             {theme === "dark" ? "浅色模式" : "深色模式"}
@@ -322,7 +359,7 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
         </aside>
 
         <main className="main-shell">
-          <div className="workspace" aria-busy={!ready}>
+          <div className={view === "ai" ? "workspace agent-content" : "workspace"} aria-busy={!ready || (view === "ai" && !conversation.loaded)}>
             {view === "review" && (
               <>
                 <div className="page-heading">
@@ -347,13 +384,12 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
               </>
             )}
 
-            {view === "ai" && <>
-              {feedback}
-              <AiWorkspace turns={conversation.turns} activities={activities} revision={dataset.revision} ready={ready}
-                useRules={useRules} setUseRules={(value) => { clearAnalysis(); setUseRules(value); }}
-                ask={askAi} stop={conversation.stop} reset={conversation.reset}
-                actions={{ openActivity, openEvidence: openAiEvidence, openReport: applyRun, openRule, scan: scanForTask }} />
-            </>}
+            {view === "ai" && <AiWorkspace key={conversation.selectedId}
+              turns={conversation.turns} threads={conversation.threads} selected={conversation.selectedId} select={conversation.select} create={conversation.create}
+              activities={activities} ledgerTitle={dataset.title} modelLabel={modelLabel} notice={feedback} storageWarning={conversation.storageWarning}
+              revision={dataset.revision} ready={ready && conversation.loaded}
+              useRules={useRules} setUseRules={(value) => { clearAnalysis(); setUseRules(value); }} ask={askAi} stop={() => conversation.stop()}
+              actions={{ openActivity, openEvidence: openAiEvidence, openReport: applyRun, openRule, scan: scanForTask, retry: retryAi }} />}
 
             {view === "visual" && (
               <VisualDashboard report={report} theme={theme} evidence={openEvidence}>
@@ -392,7 +428,7 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
       <PrintSummary report={report} trial={trial} source={dataset.title} rule={rule} />
 
       {dialog?.type === "csv" && <CsvDialog currentRows={dataset.rows} close={closeDialog} save={importDataset} />}
-      {dialog?.type === "scan" && <AttendanceDialog rows={dialogActivity?.rows ?? dataset.rows} initial={dialog.initial}
+      {dialog?.type === "scan" && <AttendanceDialog rows={dialogActivity?.rows ?? dataset.rows} initial={dialog.initial} initialFile={dialog.file}
         canScan={visionConfigured} lockActivity={dialog.taskId !== undefined}
         close={closeDialog} save={saveAttendance} />}
       {dialog?.type === "evidence" && <EvidenceDialog group={dialog.group} rule={dialog.context ? dialog.context.rule : rule}
