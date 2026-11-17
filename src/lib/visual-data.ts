@@ -1,13 +1,7 @@
 import { makeReport, makeReportGroup, type Criteria, type Report, type ReportGroup } from "./attendance";
+import type { FlowColors } from "./visual-palette";
 
 const maxChannels = 8;
-const channelColors = ["#65cfff", "#53e0b5", "#ad9dff", "#8bd8f7", "#85dca6", "#e6a4f3", "#c6de76", "#8b9fba"];
-export const sampleColors = {
-  ready: "#62ebba",
-  incomplete: "#f6be78",
-  small: "#96b3ff",
-  empty: "#71889e",
-};
 
 type FlowNode = {
   id: string;
@@ -24,15 +18,15 @@ function attendanceOutcomes(group: Pick<ReportGroup, "attended" | "tracked" | "r
   return [group.attended, group.tracked - group.attended, group.registered - group.tracked];
 }
 
-function buildFlow(report: Report, groups: ReportGroup[]) {
-  const start: FlowNode = { id: "registered", label: "全部报名", amount: report.totals.registered, depth: 0, color: "#58c6fa" };
+function buildFlow(report: Report, groups: ReportGroup[], colors: FlowColors) {
+  const start: FlowNode = { id: "registered", label: "全部报名", amount: report.totals.registered, depth: 0, color: colors.registered };
   const outlets: FlowNode[] = [
-    { id: "attended", label: "已到场", amount: report.totals.attended, depth: 2, color: "#50e2af" },
-    { id: "absent", label: "未到场", amount: report.totals.tracked - report.totals.attended, depth: 2, color: "#7b9cc9" },
-    { id: "pending", label: "待补录", amount: report.totals.registered - report.totals.tracked, depth: 2, color: "#f4b66b" },
+    { id: "attended", label: "已到场", amount: report.totals.attended, depth: 2, color: colors.attended },
+    { id: "absent", label: "未到场", amount: report.totals.tracked - report.totals.attended, depth: 2, color: colors.absent },
+    { id: "pending", label: "待补录", amount: report.totals.registered - report.totals.tracked, depth: 2, color: colors.pending },
   ];
   const middle = groups.filter(({ registered }) => registered > 0).map((group, index): FlowNode => ({
-    id: "channel-" + index, label: group.label, amount: group.registered, depth: 1, color: channelColors[index], group,
+    id: "channel-" + index, label: group.label, amount: group.registered, depth: 1, color: colors.channels[index], group,
   }));
 
   const links: FlowLink[] = [];
@@ -113,7 +107,7 @@ function buildHeatmap(groups: ReportGroup[], dates: string[], criteria: Criteria
   };
 }
 
-export function makeVisualReport(report: Report) {
+export function makeVisualReport(report: Report, colors: FlowColors) {
   const byChannel = report.scope.groupBy === "channel"
     ? report
     : makeReport(report.rows, { ...report.scope, groupBy: "channel" }, report.criteria);
@@ -126,7 +120,7 @@ export function makeVisualReport(report: Report) {
   const dates = [...new Set(byChannel.rows.map(({ date }) => date))].sort();
 
   return {
-    flow: buildFlow(byChannel, chartGroups),
+    flow: buildFlow(byChannel, chartGroups, colors),
     heatmap: buildHeatmap(chartGroups, dates, report.criteria),
     groups,
     channelCount: byChannel.groups.length,

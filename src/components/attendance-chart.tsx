@@ -37,8 +37,10 @@ export default function AttendanceChart({ groups, metric, evidence }: {
             allowDecimals={false}
           />
           <Tooltip
-            cursor={{ fill: "var(--paper-muted)" }}
+            cursor={{ fill: "var(--surface-muted)" }}
             contentStyle={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6 }}
+            labelStyle={{ color: "var(--text)" }}
+            itemStyle={{ color: "var(--text)" }}
             formatter={(value) => metric === "rate" ? `${value}%` : value}
           />
           {metric === "count" ? (

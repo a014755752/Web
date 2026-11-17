@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { ArrowDownToLine, BookOpen, CalendarDays, ChartNoAxesCombined, FolderOpen, NotebookPen, Plus, ScanLine, Upload, X } from "lucide-react";
+import { ArrowDownToLine, BookOpen, CalendarDays, ChartNoAxesCombined, FolderOpen, Moon, NotebookPen, Plus, ScanLine, Sun, Upload, X } from "lucide-react";
 import clubMark from "@/app/icon.png";
 import {
   defaultCriteria, defaultScope, makeReport, recordKey, scopeLabel, scopeSchema,
@@ -14,6 +14,7 @@ import { requestAnalysis } from "@/lib/analysis-client";
 import { initialRecords } from "@/lib/activity-ledger";
 import { activityScope, appendLedgerRows, listActivities, validateLedgerRows, type ActivityFields, type LedgerActivity } from "@/lib/ledger-activities";
 import { applicableRule, clubRules } from "@/lib/rules";
+import { themeStorageKey, type Theme } from "@/lib/theme";
 import { readLedger, writeLedger, type Attachment, type WorkspaceLedger } from "@/lib/workspace-store";
 import { AttendanceDialog } from "./attendance-dialog";
 import { ActivityComparison, ActivityDetail, ActivityEditor, type ActivityEditorMode } from "./activity-panels";
@@ -39,6 +40,7 @@ type Dialog = { type: "csv" } |
 const initialData: WorkspaceLedger = { revision: 0, title: "2026 秋季活动台账", rows: initialRecords, attachments: {} };
 
 export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured }: { modelConfigured: boolean; visionConfigured?: boolean }) {
+  const [theme, setTheme] = useState<Theme>("light");
   const [dataset, setDataset] = useState(initialData);
   const [storage, setStorage] = useState<"opening" | "ready" | "temporary">("opening");
   const [view, setView] = useState<View>("review");
@@ -56,6 +58,10 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
   const active = useRef<AbortController | null>(null);
   const navigationId = useRef(0);
   const navigation = useRef<ViewTransition | null>(null);
+
+  useEffect(() => {
+    setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -96,6 +102,14 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
     : makeReport(dataset.rows, report.scope, { ...report.criteria, minSamples: trialMinimum }), [dataset.rows, report, trialMinimum]);
   const scopeValid = scopeSchema.safeParse(scope).success;
   const ready = storage !== "opening";
+
+  function toggleTheme() {
+    const root = document.documentElement;
+    const next = root.dataset.theme === "dark" ? "light" : "dark";
+    root.dataset.theme = next;
+    setTheme(next);
+    try { localStorage.setItem(themeStorageKey, next); } catch { /* The theme still applies to this page. */ }
+  }
 
   function stopAnalysis() {
     active.current?.abort();
@@ -319,6 +333,10 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
               <Icon size={18} strokeWidth={1.65} aria-hidden="true" /><span>{label}</span>
             </button>)}
           </nav>
+          <button type="button" className="button secondary theme-toggle" onClick={toggleTheme}>
+            {theme === "dark" ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
+            {theme === "dark" ? "浅色模式" : "深色模式"}
+          </button>
         </aside>
 
         <main className="main-shell">
@@ -352,7 +370,7 @@ export function ReviewApp({ modelConfigured, visionConfigured = modelConfigured 
             )}
 
             {view === "visual" && (
-              <VisualDashboard report={report} evidence={openEvidence}>
+              <VisualDashboard report={report} theme={theme} evidence={openEvidence}>
                 <FilterBar scope={scope} rows={dataset.rows} change={changeScope} reset={() => changeScope(defaultScope(dataset.rows))} />
                 {!scopeValid && <p className="form-error" role="alert">起始日期须早于或等于结束日期。</p>}
               </VisualDashboard>

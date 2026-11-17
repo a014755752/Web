@@ -4,7 +4,9 @@ import dynamic from "next/dynamic";
 import { useMemo, useState, type ReactNode } from "react";
 import { ArrowUpRight, CalendarDays } from "lucide-react";
 import { groupLabels, numberLabel, percent, scopeLabel, type Report, type ReportGroup } from "@/lib/attendance";
-import { makeVisualReport, sampleColors } from "@/lib/visual-data";
+import type { Theme } from "@/lib/theme";
+import { makeVisualReport } from "@/lib/visual-data";
+import { visualPalettes } from "@/lib/visual-palette";
 import { ChartPlaceholder } from "./chart-placeholder";
 import type { HeatmapMetric } from "./visual-charts";
 import "./visual-dashboard.css";
@@ -30,13 +32,15 @@ function ChartEmpty({ children }: { children: ReactNode }) {
   return <div className="viz-empty">{children}</div>;
 }
 
-export default function VisualDashboard({ report, evidence, children }: {
+export default function VisualDashboard({ report, theme, evidence, children }: {
   report: Report;
+  theme: Theme;
   evidence: (group: ReportGroup) => void;
   children: ReactNode;
 }) {
   const [metric, setMetric] = useState<HeatmapMetric>("rate");
-  const visual = useMemo(() => makeVisualReport(report), [report]);
+  const palette = visualPalettes[theme];
+  const visual = useMemo(() => makeVisualReport(report, palette.flow), [report, palette]);
   const { flow, groups, heatmap, priorities, channelCount } = visual;
   const incomplete = groups.find(({ status }) => status === "incomplete");
   const priority = priorities[0];
@@ -81,7 +85,7 @@ export default function VisualDashboard({ report, evidence, children }: {
             <p>全部报名 <span>→</span> 宣传渠道 <span>→</span> 签到结果</p>
           </div>
           <div className="viz-chart-frame" style={{ height: chartHeight }}>
-            {flow.links.length > 0 ? <FlowChart flow={flow} evidence={evidence} /> : <ChartEmpty>当前范围无报名数据</ChartEmpty>}
+            {flow.links.length > 0 ? <FlowChart flow={flow} palette={palette} evidence={evidence} /> : <ChartEmpty>当前范围无报名数据</ChartEmpty>}
           </div>
           <div className="viz-flow-totals">
             {flow.outlets.map(({ id, label, amount, color }) => (
@@ -97,12 +101,12 @@ export default function VisualDashboard({ report, evidence, children }: {
           </div>
           <div className="viz-chart-frame" style={{ height: chartHeight }}>
             {groups.some(({ rate }) => rate !== null)
-              ? <SampleChart groups={groups} criteria={report.criteria} evidence={evidence} />
+              ? <SampleChart groups={groups} criteria={report.criteria} palette={palette} evidence={evidence} />
               : <ChartEmpty>补录签到后可比较到场率</ChartEmpty>}
           </div>
           <div className="viz-legend">
             {(["ready", "incomplete", "small"] as const).map((status) => (
-              <span key={status}><i style={{ background: sampleColors[status] }} />{groupLabels[status]}</span>
+              <span key={status}><i style={{ background: palette.samples[status] }} />{groupLabels[status]}</span>
             ))}
             {channelCount > groups.length && <span>显示报名最多的 {groups.length} 个渠道</span>}
           </div>
@@ -123,18 +127,18 @@ export default function VisualDashboard({ report, evidence, children }: {
           <div><h2 id="timeline-title">渠道时段热力图</h2>
             <p>{heatmap.interval === "段" ? "按时段汇总" : `按${heatmap.interval}汇总`} · {heatmap.periods.length} 个时段 · 点击单元格查看原始记录</p>
           </div>
-          <div className="viz-switch" role="group" aria-label="热力图指标">
+          <div className="segmented viz-switch" role="group" aria-label="热力图指标">
             <button type="button" aria-pressed={metric === "rate"} onClick={() => setMetric("rate")}>到场率</button>
             <button type="button" aria-pressed={metric === "coverage"} onClick={() => setMetric("coverage")}>签到覆盖率</button>
           </div>
         </div>
         <div className="viz-chart-frame" style={{ height: Math.max(175, 36 * heatmap.labels.length + 48) }}>
-          {heatmap.cells.length > 0 ? <TimelineChart heatmap={heatmap} metric={metric} evidence={evidence} /> : <ChartEmpty>当前范围无活动记录</ChartEmpty>}
+          {heatmap.cells.length > 0 ? <TimelineChart heatmap={heatmap} metric={metric} palette={palette} evidence={evidence} /> : <ChartEmpty>当前范围无活动记录</ChartEmpty>}
         </div>
         <div className="viz-legend viz-heat-legend">
-          <span>0%<i className="viz-scale" />100%</span>
-          <span><i className="viz-legend-square viz-no-data" />无记录</span>
-          {metric === "rate" && <span><i className="viz-legend-square viz-missing" />待补录</span>}
+          <span>0%<i className="viz-scale" style={{ background: `linear-gradient(90deg, ${palette.heatmap.levels.join(", ")})` }} />100%</span>
+          <span><i className="viz-legend-square" style={{ background: palette.heatmap.noRecord }} />无记录</span>
+          {metric === "rate" && <span><i className="viz-legend-square" style={{ background: palette.heatmap.pending }} />待补录</span>}
         </div>
         {groups.length > 0 && <div className="viz-channel-links" aria-label="按渠道查看原始记录">
           {groups.map((group) => (
