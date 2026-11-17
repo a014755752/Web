@@ -355,7 +355,7 @@ export function ReviewApp({ modelConfigured, modelLabel, visionConfigured = mode
             </button>)}
           </nav>
           {view === "ai" && conversation.loaded && <AgentSessions threads={conversation.threads} selected={conversation.selectedId}
-            select={conversation.select} create={conversation.create} />}
+            select={conversation.select} create={conversation.create} remove={conversation.remove} />}
           <button type="button" className="button secondary theme-toggle" onClick={toggleTheme}>
             {theme === "dark" ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
             {theme === "dark" ? "浅色模式" : "深色模式"}
@@ -389,7 +389,7 @@ export function ReviewApp({ modelConfigured, modelLabel, visionConfigured = mode
             )}
 
             {view === "ai" && <AiWorkspace key={conversation.selectedId}
-              turns={conversation.turns} threads={conversation.threads} selected={conversation.selectedId} select={conversation.select} create={conversation.create}
+              turns={conversation.turns} threads={conversation.threads} selected={conversation.selectedId} select={conversation.select} create={conversation.create} remove={conversation.remove}
               activities={activities} ledgerTitle={dataset.title} modelLabel={modelLabel} notice={feedback} storageWarning={conversation.storageWarning}
               revision={dataset.revision} ready={ready && conversation.loaded}
               useRules={useRules} setUseRules={(value) => { clearAnalysis(); setUseRules(value); }} ask={askAi} stop={() => conversation.stop()}

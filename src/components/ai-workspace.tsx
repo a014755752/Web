@@ -2,14 +2,15 @@
 
 import Image from "next/image";
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowDown, ArrowRight, ArrowUp, ChartNoAxesCombined, Check, ChevronRight, Copy, FileText, GitCompareArrows, LoaderCircle, PanelRight, Paperclip, Plus, RotateCcw, ScanLine, Square, X } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, ChartNoAxesCombined, Check, ChevronRight, Copy, FileText, GitCompareArrows, History, LoaderCircle, PanelRight, Paperclip, Plus, RotateCcw, ScanLine, Square, X } from "lucide-react";
 import { groupLabels, numberLabel, percent, scopeLabel, type AttendanceRecord, type Report, type ReportGroup } from "@/lib/attendance";
 import type { AnalysisRun } from "@/lib/analysis-run";
 import type { ActivityPair } from "@/lib/conversation";
 import { formatPointChange, type LedgerActivity } from "@/lib/ledger-activities";
 import { clubRules } from "@/lib/rules";
 import { ToolCalls, ToolInspectorList } from "./agent-tools";
-import { conversationTitle, type AiConversation, type AiTurn } from "./use-ai-conversation";
+import { type AiConversation, type AiTurn } from "./use-ai-conversation";
+import { ConversationHistory } from "./conversation-history";
 import "./ai-workspace.css";
 
 export type AiQuestion =
@@ -54,13 +55,14 @@ function ActivitySelect({ label, value, activities, exclude, all, disabled, chan
   );
 }
 
-export function AiWorkspace({ turns, threads, selected, select, create, activities, ledgerTitle, modelLabel, notice, storageWarning,
+export function AiWorkspace({ turns, threads, selected, select, create, remove, activities, ledgerTitle, modelLabel, notice, storageWarning,
   revision, ready, useRules, setUseRules, ask, stop, actions }: {
   turns: AiTurn[];
   threads: AiConversation[];
   selected: string;
   select: (id: string) => void;
   create: () => void;
+  remove: (id: string) => Promise<boolean>;
   activities: LedgerActivity[];
   ledgerTitle: string;
   modelLabel?: string;
@@ -83,6 +85,7 @@ export function AiWorkspace({ turns, threads, selected, select, create, activiti
   const [targetId, setTargetId] = useState(() => lastResult?.kind === "compare" ? lastResult.report.comparison.activity.eventId : "");
   const [formError, setFormError] = useState("");
   const [inspector, setInspector] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [awayFromEnd, setAwayFromEnd] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -162,10 +165,11 @@ export function AiWorkspace({ turns, threads, selected, select, create, activiti
       <header className="agent-header">
         <div className="ai-page-title"><Image className="composer-icon" src="/images/review-pencil.webp" width={32} height={32} alt="" unoptimized /><h1>AI 对话</h1></div>
         <div className="agent-header-actions">
-          <select className="agent-session-picker" aria-label="切换对话" value={selected} onChange={(event) => select(event.target.value)}>
-            {threads.map((thread) => <option value={thread.id} key={thread.id}>{conversationTitle(thread)}</option>)}
-          </select>
-          <button type="button" className="button secondary small-button agent-new" onClick={create}><Plus size={16} />新对话</button>
+          <button type="button" className="button primary small-button agent-new" disabled={!ready} onClick={() => {
+            create();
+            document.getElementById("ai-question")?.focus();
+          }}><Plus size={16} />新对话</button>
+          <button type="button" className="button secondary small-button" disabled={!ready} aria-haspopup="dialog" onClick={() => setHistoryOpen(true)}><History size={16} />对话历史</button>
           <button type="button" className="button secondary small-button" aria-expanded={inspector} aria-controls="agent-inspector"
             onClick={() => setInspector(!inspector)}><PanelRight size={16} />工具面板</button>
         </div>
@@ -267,6 +271,7 @@ export function AiWorkspace({ turns, threads, selected, select, create, activiti
           </section>}
         </aside>}
       </div>
+      {historyOpen && <ConversationHistory threads={threads} selected={selected} select={select} remove={remove} close={() => setHistoryOpen(false)} />}
     </div>
   );
 }

@@ -2,7 +2,8 @@
 
 import { Check, ChevronRight, CircleAlert, CirclePause, LoaderCircle, Plus, Terminal } from "lucide-react";
 import type { AnalysisStep } from "@/lib/analysis-run";
-import { conversationTitle, type AiConversation, type AiTurn } from "./use-ai-conversation";
+import { type AiConversation, type AiTurn } from "./use-ai-conversation";
+import { ConversationList } from "./conversation-history";
 
 const states = {
   running: { label: "执行中", Icon: LoaderCircle },
@@ -15,18 +16,14 @@ function toolAnchor(turnId: string, index: number) {
   return `agent-tool-${turnId}-${index}`;
 }
 
-export function AgentSessions({ threads, selected, select, create }: {
-  threads: AiConversation[]; selected: string; select: (id: string) => void; create: () => void;
+export function AgentSessions({ threads, selected, select, create, remove }: {
+  threads: AiConversation[]; selected: string; select: (id: string) => void; create: () => void; remove: (id: string) => Promise<boolean>;
 }) {
   return (
     <section className="agent-sessions" aria-label="对话历史">
       <header><h2>对话历史</h2><button type="button" className="icon-button" title="新对话" aria-label="新对话" onClick={create}><Plus size={16} /></button></header>
       <div className="agent-sessions-list">
-        {threads.map((thread) => <button key={thread.id} type="button" aria-current={selected === thread.id ? "true" : undefined}
-          className="agent-session" title={conversationTitle(thread)} onClick={() => select(thread.id)}>
-          <span>{conversationTitle(thread)}</span>
-          {thread.turns.at(-1)?.status === "running" && <LoaderCircle size={14} className="spinning" aria-label="执行中" />}
-        </button>)}
+        <ConversationList threads={threads} selected={selected} select={select} remove={remove} compact />
       </div>
     </section>
   );

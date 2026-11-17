@@ -8,7 +8,7 @@ import { runLocalAnalysis, type AnalysisResponse, type AnalysisRun, type Analysi
 import { greetingReply, type ChatInput, type ChatRun, type ConversationMessage } from "@/lib/conversation";
 import { comparisonActions, comparisonReport, type ComparisonAction, type ComparisonRun } from "@/lib/comparison-run";
 import type { ActivityComparisonReport } from "@/lib/ledger-activities";
-import { readConversations, writeConversation, type WorkspaceLedger } from "@/lib/workspace-store";
+import { deleteConversation, readConversations, writeConversation, type WorkspaceLedger } from "@/lib/workspace-store";
 
 type ReviewResult = { kind: "review"; run: AnalysisRun; report: Report; pending: AttendanceRecord | undefined };
 type CompareResult = { kind: "compare"; mode: ComparisonRun["mode"]; report: ActivityComparisonReport; action: ComparisonAction; note?: string };
@@ -129,6 +129,9 @@ export function useAiConversation(modelConfigured: boolean) {
   const active = useRef(new Map<string, { id: string; controller: AbortController }>());
   const saved = useRef(new Map<string, AiConversation>());
   const writes = useRef(Promise.resolve());
+  const currentThreads = useRef(threads);
+  currentThreads.current = threads;
+  const removing = useRef(new Set<string>());
   const currentThread = threads.find(({ id }) => id === selectedId);
 
   useEffect(() => {
@@ -166,7 +169,7 @@ export function useAiConversation(modelConfigured: boolean) {
     for (const thread of threads) {
       const previous = saved.current.get(thread.id);
       const latest = thread.turns.at(-1);
-      if (previous === thread || !latest || (latest.status === "running" && previous?.turns.at(-1)?.id === latest.id)) continue;
+      if (previous === thread || removing.current.has(thread.id) || (latest?.status === "running" && previous?.turns.at(-1)?.id === latest.id)) continue;
       saved.current.set(thread.id, thread);
       writes.current = writes.current.then(() => writeConversation(toSavedThread(thread))).catch(() => setStorageWarning(true));
     }
@@ -261,14 +264,37 @@ export function useAiConversation(modelConfigured: boolean) {
   }
 
   function create() {
-    if (!currentThread?.turns.length) return;
-    const thread = makeThread();
-    setThreads((current) => [thread, ...current]);
+    if (!loaded) return;
+    const draft = threads.find((thread) => !thread.turns.length);
+    const thread = draft ?? makeThread();
+    if (!draft) setThreads((current) => [thread, ...current]);
     setSelectedId(thread.id);
+  }
+
+  async function remove(id: string) {
+    if (removing.current.has(id) || !currentThreads.current.some((thread) => thread.id === id)) return false;
+    removing.current.add(id);
+    stop(id);
+    try {
+      await deleteConversation(id);
+      saved.current.delete(id);
+      const remaining = currentThreads.current.filter((thread) => thread.id !== id).sort((a, b) => b.updatedAt - a.updatedAt);
+      const next = remaining[0] ?? makeThread();
+      setThreads((current) => {
+        const kept = current.filter((thread) => thread.id !== id);
+        return kept.length ? kept : [next];
+      });
+      setSelectedId((current) => current === id ? next.id : current);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      removing.current.delete(id);
+    }
   }
 
   return {
     threads: [...threads].sort((a, b) => b.updatedAt - a.updatedAt), selectedId, turns: currentThread?.turns ?? [],
-    select: setSelectedId, create, loaded, storageWarning, execute, resume, stop, stopAll,
+    select: setSelectedId, create, remove, loaded, storageWarning, execute, resume, stop, stopAll,
   };
 }

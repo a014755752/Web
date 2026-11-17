@@ -13,6 +13,7 @@ export type WorkspaceLedger = {
 const storeName = "ledgers";
 const ledgerKey = "current";
 const conversationPrefix = "conversation:";
+const deletedConversationPrefix = "deleted-conversation:";
 
 function openDatabase() {
   return new Promise<IDBDatabase>((resolve, reject) => {
@@ -86,23 +87,44 @@ export async function writeConversation<T extends {
       transaction.onabort = () => reject(transaction.error);
       const store = transaction.objectStore(storeName);
       const key = conversationPrefix + conversation.id;
-      const request = store.get(key);
-      request.onsuccess = () => {
-        const previous = request.result as T | undefined;
-        if (!previous) {
-          store.put(conversation, key);
-          return;
-        }
-        const turns = new Map(previous.turns.map((turn) => [turn.id, turn]));
-        for (const turn of conversation.turns) {
-          const old = turns.get(turn.id);
-          if (!old || (old.updatedAt ?? 0) <= (turn.updatedAt ?? 0)) turns.set(turn.id, turn);
-        }
-        store.put({
-          ...conversation, updatedAt: Math.max(conversation.updatedAt, previous.updatedAt),
-          turns: [...turns.values()].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0)),
-        }, key);
+      // A deletion marker prevents queued saves or another tab from restoring deleted messages.
+      const deletion = store.get(deletedConversationPrefix + conversation.id);
+      deletion.onsuccess = () => {
+        if (deletion.result) return;
+        const request = store.get(key);
+        request.onsuccess = () => {
+          const previous = request.result as T | undefined;
+          if (!previous) {
+            store.put(conversation, key);
+            return;
+          }
+          const turns = new Map(previous.turns.map((turn) => [turn.id, turn]));
+          for (const turn of conversation.turns) {
+            const old = turns.get(turn.id);
+            if (!old || (old.updatedAt ?? 0) <= (turn.updatedAt ?? 0)) turns.set(turn.id, turn);
+          }
+          store.put({
+            ...conversation, updatedAt: Math.max(conversation.updatedAt, previous.updatedAt),
+            turns: [...turns.values()].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0)),
+          }, key);
+        };
       };
+    });
+  } finally {
+    database.close();
+  }
+}
+
+export async function deleteConversation(id: string) {
+  const database = await openDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(storeName, "readwrite");
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => reject(transaction.error);
+      const store = transaction.objectStore(storeName);
+      store.put({ deletedAt: Date.now() }, deletedConversationPrefix + id);
+      store.delete(conversationPrefix + id);
     });
   } finally {
     database.close();
