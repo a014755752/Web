@@ -1,4 +1,6 @@
 import type { AttendanceRecord } from "./attendance";
+import type { AgentDocument, WebSource } from "./agent-documents";
+import type { LedgerProposal } from "./ledger-proposal";
 
 export type ConversationMessage = { role: "user" | "assistant"; content: string };
 export type ActivityPair = { baselineId: string; targetId: string };
@@ -11,9 +13,11 @@ export type ChatInput = {
   eventId?: string;
   pair?: ActivityPair;
   history?: ConversationMessage[];
+  documents?: AgentDocument[];
+  allowWeb?: boolean;
 };
 
-export type ChatRun = { kind: "chat"; mode: "local" | "agent"; text: string };
+export type ChatRun = { kind: "chat"; mode: "local" | "agent"; text: string; sources?: WebSource[]; proposal?: LedgerProposal };
 
 export function greetingReply(question: string) {
   const greeting = question.normalize("NFKC").trim();

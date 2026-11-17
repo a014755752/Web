@@ -5,11 +5,13 @@ import { runActivityAgent } from "@/lib/server/activity-agent";
 import { runComparisonAgent } from "@/lib/server/comparison-agent";
 import { runConversationAgent } from "@/lib/server/conversation-agent";
 import { modelConfig, modelFailure } from "@/lib/server/model";
+import { documentSchema } from "@/lib/agent-documents";
 
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 const common = {
-  question: z.string().trim().min(1).max(300),
+  question: z.string().trim().min(1).max(2000),
   rows: recordsSchema,
   useRules: z.boolean(),
   context: z.string().max(1800).optional(),
@@ -17,7 +19,8 @@ const common = {
     .refine((messages) => messages.reduce((sum, message) => sum + message.content.length, 0) <= 30000).optional(),
 };
 const inputSchema = z.union([
-  z.object({ ...common, kind: z.literal("chat"), eventId: z.string().max(80).optional(),
+  z.object({ ...common, kind: z.literal("chat"), eventId: z.string().max(80).optional(), allowWeb: z.boolean().optional(),
+    documents: z.array(documentSchema).max(3).refine((documents) => documents.reduce((size, document) => size + document.text.length, 0) <= 48000).optional(),
     pair: z.object({ baselineId: z.string().max(80), targetId: z.string().max(80) }).optional() }),
   z.object({ ...common, kind: z.literal("review").optional(), scope: scopeSchema, fixedScope: z.boolean().optional(), workflow: z.boolean().optional() }),
   z.object({ ...common, kind: z.literal("compare"), baselineId: z.string().trim().min(1).max(80), targetId: z.string().trim().min(1).max(80) })
@@ -45,7 +48,7 @@ export async function POST(request: Request) {
   if (!parsed.success) return Response.json({ error: "请核对问题、日期范围和活动记录。" }, { status: 400 });
 
   const cancellation = new AbortController();
-  const timeout = AbortSignal.timeout(48_000);
+  const timeout = AbortSignal.timeout(90000);
   const signal = AbortSignal.any([request.signal, cancellation.signal, timeout]);
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({

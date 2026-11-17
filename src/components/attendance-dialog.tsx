@@ -61,11 +61,11 @@ export function AttendanceDialog({ rows, initial, initialFile, canScan, lockActi
         form.set("file", file);
         const response = await fetch("/api/attendance/scan", { method: "POST", body: form, signal: request.signal });
         if (response.ok) {
-          const data = await response.json() as { result?: unknown; model?: string };
+          const data = await response.json() as { result?: unknown; model?: string; source?: string };
           const parsed = scanResultSchema.safeParse(data.result);
           if (parsed.success) {
             result = parsed.data;
-            method = data.model === "deepseek-flash" ? "DeepSeek Flash" : "视觉模型";
+            method = data.source === "DeepSeek OCR" ? "DeepSeek OCR" : data.model === "deepseek-flash" ? "DeepSeek Flash" : "视觉模型";
           }
         }
       } catch {

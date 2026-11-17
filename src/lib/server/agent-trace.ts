@@ -13,6 +13,14 @@ const toolLabels: Record<string, string> = {
   select_follow_up: "选择后续操作",
   compare_activities: "对比活动记录",
   choose_next_action: "选定下一场改进动作",
+  read_activity_data: "读取活动台账",
+  read_document: "读取识别文件",
+  create_activities: "准备新增活动",
+  update_activities: "准备修改活动",
+  search_web: "搜索网页",
+  fetch_webpage: "阅读网页",
+  review_activity: "执行活动复盘",
+  compare_activity_pair: "执行两场对比",
 };
 
 function fields(value: unknown) {
@@ -43,6 +51,9 @@ function summary(key: string, output: Record<string, unknown>) {
     return output.sources.map((source) => fields(source).title).filter(Boolean).join("、") || "当前范围无匹配规则";
   }
   if (key === "compare_activities") return `${output.comparableChannels ?? 0} 个渠道可比较`;
+  if (key === "read_activity_data") return `${output.total ?? 0} 条匹配记录`;
+  if (key === "read_document") return `${output.name ?? "文件"} · ${output.pageCount ?? 0} 页`;
+  if (key === "search_web") return `${Array.isArray(output.results) ? output.results.length : 0} 个网页来源`;
   return String(output.title ?? output.label ?? output.key ?? "已返回执行结果");
 }
 

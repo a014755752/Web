@@ -8,4 +8,4 @@ export const scanResultSchema = z.object({
 });
 
 export type ScanResult = z.infer<typeof scanResultSchema>;
-export type ScanSource = "DeepSeek Flash" | "视觉模型" | "本地 OCR";
+export type ScanSource = "DeepSeek Flash" | "DeepSeek OCR" | "视觉模型" | "本地 OCR";

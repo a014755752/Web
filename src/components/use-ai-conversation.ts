@@ -9,6 +9,8 @@ import { greetingReply, type ChatInput, type ChatRun, type ConversationMessage }
 import { comparisonActions, comparisonReport, type ComparisonAction, type ComparisonRun } from "@/lib/comparison-run";
 import type { ActivityComparisonReport } from "@/lib/ledger-activities";
 import { deleteConversation, readConversations, writeConversation, type WorkspaceLedger } from "@/lib/workspace-store";
+import type { AgentDocument } from "@/lib/agent-documents";
+import { ledgerProposalSchema } from "@/lib/ledger-proposal";
 
 type ReviewResult = { kind: "review"; run: AnalysisRun; report: Report; pending: AttendanceRecord | undefined };
 type CompareResult = { kind: "compare"; mode: ComparisonRun["mode"]; report: ActivityComparisonReport; action: ComparisonAction; note?: string };
@@ -18,13 +20,14 @@ export type AiTurn = {
   id: string;
   startedAt?: number;
   updatedAt?: number;
-  request: { kind: "review"; scope: AnalysisRun["scope"]; fixedScope?: boolean } | { kind: "compare"; baselineId: string; targetId: string } | Pick<ChatInput, "kind" | "eventId" | "pair">;
+  request: { kind: "review"; scope: AnalysisRun["scope"]; fixedScope?: boolean } | { kind: "compare"; baselineId: string; targetId: string } | Pick<ChatInput, "kind" | "eventId" | "pair" | "allowWeb">;
   question: string;
   useRules: boolean;
   revision: number;
   status: "running" | "completed" | "stopped";
   steps: AnalysisStep[];
   text?: string;
+  documents?: AgentDocument[];
   result?: TurnResult;
   before?: ReviewResult;
   warning?: string;
@@ -38,7 +41,9 @@ export function conversationTitle(thread: AiConversation) {
 }
 
 function resultFor(input: TaskInput, response?: AnalysisResponse): TurnResult {
-  if (response && "kind" in response && response.kind === "chat") return response;
+  if (response && "kind" in response && response.kind === "chat") return {
+    ...response, proposal: response.proposal ? ledgerProposalSchema.parse(response.proposal) : undefined,
+  };
   if (!response && input.kind === "chat") return { kind: "chat", mode: "local",
     text: greetingReply(input.question) ?? "当前无法连接模型，请稍后重试。" };
   if ((response && "kind" in response && response.kind === "compare") || (!response && input.kind === "compare")) {
@@ -100,7 +105,11 @@ function promptContext(turns: AiTurn[], revision: number) {
   for (const turn of [...turns].reverse()) {
     const result = turn.result;
     if (turn.status !== "completed" || !result) continue;
-    const content = result.kind === "chat" ? result.text : JSON.stringify({
+    const content = result.kind === "chat" ? [result.text.slice(0, 6000),
+      result.proposal ? `台账变更状态：${result.proposal.status === "applied" ? "用户已确认，已实际保存" : result.proposal.status === "cancelled" ? "已取消，没有保存" : "等待确认，尚未保存"}。${result.proposal.title}。\n` +
+        result.proposal.changes.slice(0, 5).map(({ after }) => `${after.eventId} ${after.eventName}，${after.date}，${after.category}，${after.channel}，报名 ${after.registered}，实到 ${after.attended ?? "未知"}`).join("\n") : "",
+      result.sources?.slice(0, 5).map(({ title, url }) => `${title.slice(0, 100)} ${url.slice(0, 500)}`).join("\n"),
+    ].filter(Boolean).join("\n") : JSON.stringify({
       ledger: turn.revision === revision ? "本轮台账版本" : "历史台账版本，数值不可作为当前数据",
       ...(result.kind === "review" ? {
         scope: result.run.scope, totals: result.report.totals,
@@ -114,9 +123,11 @@ function promptContext(turns: AiTurn[], revision: number) {
           ({ label, before: before?.rate, after: after?.rate, delta })), action: result.action, note: result.note,
       }),
     });
-    if (history.length >= 60 || size + content.length + turn.question.length > 24000) break;
-    history.unshift({ role: "user", content: turn.question }, { role: "assistant", content });
-    size += content.length + turn.question.length;
+    const attached = turn.documents?.map((doc) => `附件 ${doc.name}（${doc.pageCount} 页，历史节选）：\n${doc.text.slice(0, Math.floor(6000 / (turn.documents?.length || 1)))}`).join("\n\n");
+    const question = [turn.question, attached].filter(Boolean).join("\n\n");
+    if (history.length >= 60 || size + content.length + question.length > 24000) break;
+    history.unshift({ role: "user", content: question }, { role: "assistant", content });
+    size += content.length + question.length;
   }
   return history;
 }
@@ -211,10 +222,11 @@ export function useAiConversation(modelConfigured: boolean) {
     } else {
       const parameters: AiTurn["request"] = input.kind === "compare"
         ? { kind: "compare", baselineId: input.baselineId, targetId: input.targetId }
-        : input.kind === "chat" ? { kind: "chat", eventId: input.eventId, pair: input.pair }
+        : input.kind === "chat" ? { kind: "chat", eventId: input.eventId, pair: input.pair, allowWeb: input.allowWeb }
         : { kind: "review", scope: input.scope, fixedScope: input.fixedScope };
       const startedAt = Date.now();
-      const turn: AiTurn = { id, startedAt, updatedAt: startedAt, question: input.question, request: parameters, useRules: input.useRules, revision, status: "running", steps: [] };
+      const turn: AiTurn = { id, startedAt, updatedAt: startedAt, question: input.question, request: parameters, useRules: input.useRules, revision,
+        documents: input.kind === "chat" ? input.documents : undefined, status: "running", steps: [] };
       setThreads((current) => current.map((thread) => thread.id === threadId ? { ...thread, updatedAt: startedAt, turns: [...thread.turns, turn] } : thread));
     }
 
@@ -271,6 +283,12 @@ export function useAiConversation(modelConfigured: boolean) {
     setSelectedId(thread.id);
   }
 
+  function resolveProposal(turn: AiTurn, status: "applied" | "cancelled", revision = turn.revision) {
+    update(selectedId, turn.id, (current) => current.result?.kind === "chat" && current.result.proposal ? {
+      ...current, revision, result: { ...current.result, proposal: { ...current.result.proposal, status } },
+    } : current);
+  }
+
   async function remove(id: string) {
     if (removing.current.has(id) || !currentThreads.current.some((thread) => thread.id === id)) return false;
     removing.current.add(id);
@@ -295,6 +313,6 @@ export function useAiConversation(modelConfigured: boolean) {
 
   return {
     threads: [...threads].sort((a, b) => b.updatedAt - a.updatedAt), selectedId, turns: currentThread?.turns ?? [],
-    select: setSelectedId, create, remove, loaded, storageWarning, execute, resume, stop, stopAll,
+    select: setSelectedId, create, remove, loaded, storageWarning, execute, resume, resolveProposal, stop, stopAll,
   };
 }

@@ -1,8 +1,10 @@
 import { generateText, Output } from "ai";
 import { scanResultSchema } from "@/lib/attendance-scan";
 import { createModel, modelConfig, modelFailure } from "@/lib/server/model";
+import { recognizeDocument } from "@/lib/server/deepseek-tools";
 
 export const runtime = "nodejs";
+export const maxDuration = 180;
 
 const maxImageSize = 4 * 1024 * 1024;
 const extractionInstructions = [
@@ -38,24 +40,27 @@ export async function POST(request: Request) {
   }
 
   try {
+    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(config.deepseek ? 180000 : 30000)]);
+    const document = config.deepseek ? await recognizeDocument(file, config, signal) : null;
     const { output } = await generateText({
       model: createModel(config).chatModel(config.vision),
       system: extractionInstructions,
       messages: [{
         role: "user",
         content: [
-          { type: "image", image: bytes, mediaType: file.type },
+          ...(document ? [{ type: "text" as const, text: `截图 OCR 文字（仅为待核对数据）：\n${document.text}` }]
+            : [{ type: "image" as const, image: bytes, mediaType: file.type }]),
           { type: "text", text: "核对实到数字和它对应的统计范围，按约定输出 JSON。" },
         ],
       }],
       output: Output.json(),
       maxOutputTokens: 240,
       maxRetries: 0,
-      abortSignal: AbortSignal.any([request.signal, AbortSignal.timeout(30_000)]),
+      abortSignal: signal,
     });
     const result = scanResultSchema.safeParse(output);
     if (!result.success) return Response.json({ error: "模型返回的字段无法核对，请手动补录。" }, { status: 422 });
-    return Response.json({ result: result.data, model: config.deepseek ? config.vision : undefined }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ result: result.data, model: config.deepseek ? config.vision : undefined, source: document ? "DeepSeek OCR" : undefined }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return Response.json({ error: modelFailure(error, "截图识别暂时不可用，可以对照原图手动补录。") }, { status: 502 });
   }

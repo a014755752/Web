@@ -22,6 +22,7 @@ import { AiWorkspace, type AiQuestion } from "./ai-workspace";
 import { CsvDialog, downloadCsv, EvidenceDialog, RecordsWorkspace, RulesWorkspace, type CsvImportMode } from "./data-panels";
 import { FilterBar, GroupTable, InsightPanel, Overview, PrintSummary, ScenarioPanel, SummaryCards } from "./review-panels";
 import { useAiConversation, type AiTurn } from "./use-ai-conversation";
+import { applyLedgerProposal } from "@/lib/ledger-proposal";
 import VisualDashboard, { preloadVisualCharts } from "./visual-dashboard";
 
 const views = [
@@ -241,7 +242,7 @@ export function ReviewApp({ modelConfigured, modelLabel, visionConfigured = mode
     const common = { question: turn.question, rows: dataset.rows, useRules: turn.useRules };
     setNotice("");
     if (request.kind === "chat") {
-      void conversation.execute({ ...request, ...common }, dataset.revision);
+      void conversation.execute({ ...request, ...common, documents: turn.documents }, dataset.revision);
       return;
     }
     if (request.kind === "compare") {
@@ -266,6 +267,25 @@ export function ReviewApp({ modelConfigured, modelLabel, visionConfigured = mode
     setDialog(null);
     selectView("ai");
     askAi({ kind: "review", eventId: activity.eventId, question: `复盘 ${activity.eventId}，核对签到缺口和渠道表现。` });
+  }
+
+  async function applyAiChanges(turn: AiTurn) {
+    const proposal = turn.result?.kind === "chat" ? turn.result.proposal : undefined;
+    if (!ready || !proposal || proposal.status !== "pending") throw new Error("这项变更已处理或当前不可用。");
+    if (turn.revision !== dataset.revision) throw new Error("台账已更新，请重新生成变更。");
+    const rows = applyLedgerProposal(dataset.rows, proposal);
+    const attachments = { ...dataset.attachments };
+    for (const { before, after } of proposal.changes) {
+      if (before && (before.attended !== after.attended || before.registered !== after.registered)) delete attachments[recordKey(before)];
+    }
+    const saved = await saveLedger({ ...dataset, rows, attachments });
+    updateScopeAfterSave(rows);
+    if (scope.eventId) {
+      const updated = rows.find((row) => row.eventId === scope.eventId);
+      if (updated) setScope({ ...scope, from: updated.date, to: updated.date, category: updated.category });
+    }
+    conversation.resolveProposal(turn, "applied", saved.revision);
+    setNotice(`已确认写入 ${proposal.changes.length} 条活动渠道记录。`);
   }
 
   async function saveActivity(mode: ActivityEditorMode, record: AttendanceRecord) {
@@ -390,7 +410,8 @@ export function ReviewApp({ modelConfigured, modelLabel, visionConfigured = mode
               activities={activities} ledgerTitle={dataset.title} modelLabel={modelLabel} notice={feedback} storageWarning={conversation.storageWarning}
               revision={dataset.revision} ready={ready && conversation.loaded}
               useRules={useRules} setUseRules={(value) => { clearAnalysis(); setUseRules(value); }} ask={askAi} stop={() => conversation.stop()}
-              actions={{ openActivity, openEvidence: openAiEvidence, openReport: applyRun, openRule, scan: scanForTask, retry: retryAi }} />}
+              actions={{ openActivity, openEvidence: openAiEvidence, openReport: applyRun, openRule, scan: scanForTask, retry: retryAi,
+                applyChanges: applyAiChanges, cancelChanges: (turn) => conversation.resolveProposal(turn, "cancelled") }} />}
 
             {view === "visual" && (
               <VisualDashboard report={report} theme={theme} evidence={openEvidence}>

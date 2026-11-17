@@ -45,7 +45,7 @@
 }
 .ai-composer textarea::placeholder { color: var(--muted); }
 .ai-composer textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.ai-composer-actions { display: flex; justify-content: end; align-items: center; gap: 8px; }
+.ai-composer-actions { display: flex; flex-wrap: wrap; justify-content: end; align-items: center; gap: 8px; }
 .ai-composer-actions .file-button { margin-inline-end: auto; }
 .agent-user-message { justify-self: end; display: grid; gap: 4px; justify-items: end; max-width: 100%; }
 .agent-user-message > span, .agent-reply-head > span:last-child { color: var(--muted); font-size: 11px; }
@@ -169,6 +169,36 @@
 .conversation-search { display: flex; align-items: center; gap: 8px; color: var(--muted); border: 1px solid var(--border); background: var(--surface-tint); border-radius: 8px; padding: 0 10px; }
 .conversation-search:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
 .conversation-search input { width: 100%; min-width: 0; background: transparent; color: var(--text); border: 0; padding: 10px 0; font: inherit; font-size: 13px; outline: 0; }
+
+.agent-web-toggle { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; cursor: pointer; }
+.agent-web-toggle input { accent-color: var(--accent); }
+.agent-documents { display: grid; gap: 6px; min-width: 0; max-width: 100%; width: 100%; }
+.agent-document { display: flex; align-items: start; gap: 5px; min-width: 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-tint); }
+.agent-document details { min-width: 0; flex: 1; }
+.agent-document summary { display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; font-size: 12px; }
+.agent-document summary > svg { flex-shrink: 0; color: var(--accent-strong); }
+.agent-document summary span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-document summary small { flex-shrink: 0; color: var(--muted); font-size: 11px; margin-left: auto; }
+.agent-document pre { max-height: 170px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0 0; font: inherit; font-size: 12px; line-height: 1.6; }
+.agent-document > .icon-button { flex-shrink: 0; height: 22px; width: 22px; }
+.agent-web-sources { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 7px; }
+.agent-web-sources h3 { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+.agent-web-sources a { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--text); background: var(--surface-tint); border: 1px solid var(--border); border-radius: 7px; padding: 9px; text-decoration: none; }
+.agent-web-sources a:hover { border-color: var(--accent); }
+.agent-web-sources a > span, .agent-web-sources a > svg { flex-shrink: 0; color: var(--muted); font-size: 11px; }
+.agent-web-sources a > div { flex: 1; display: grid; gap: 3px; min-width: 0; }
+.agent-web-sources strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 550; }
+.agent-web-sources small { font-size: 11px; color: var(--muted); }
+.agent-ledger-proposal { display: grid; gap: 12px; padding: 15px; min-width: 0; }
+.agent-ledger-proposal > header, .agent-ledger-proposal > footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.agent-ledger-proposal h3 { font-size: 15px; }
+.agent-ledger-proposal > footer { justify-content: flex-end; }
+.agent-ledger-proposal .table-scroll { max-height: 360px; }
+.agent-ledger-proposal table { min-width: 490px; }
+.agent-ledger-proposal td > small { display: block; font-size: 11px; color: var(--muted); }
+.agent-changed-value { display: inline-flex; flex-direction: column; gap: 2px; }
+.agent-changed-value del { color: var(--muted); font-size: 11px; }
+.agent-changed-value strong { color: var(--accent-strong); }
 
 @media (max-width: 1020px) {
   .agent-inspector { position: absolute; z-index: 3; top: 0; bottom: 0; right: 0; width: min(100%, 300px); box-shadow: -7px 0 22px var(--shadow); }

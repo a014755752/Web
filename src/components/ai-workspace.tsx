@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowDown, ArrowRight, ArrowUp, ChartNoAxesCombined, Check, ChevronRight, Copy, FileText, GitCompareArrows, LoaderCircle, PanelLeft, PanelRight, Paperclip, RotateCcw, ScanLine, Square, X } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, ChartNoAxesCombined, Check, ChevronRight, Copy, FileText, GitCompareArrows, Globe, LoaderCircle, PanelLeft, PanelRight, Paperclip, RotateCcw, ScanLine, Square, X } from "lucide-react";
 import { groupLabels, numberLabel, percent, scopeLabel, type AttendanceRecord, type Report, type ReportGroup } from "@/lib/attendance";
 import type { AnalysisRun } from "@/lib/analysis-run";
 import type { ActivityPair } from "@/lib/conversation";
@@ -11,10 +11,13 @@ import { clubRules } from "@/lib/rules";
 import { ToolCalls, ToolInspectorList } from "./agent-tools";
 import { type AiConversation, type AiTurn } from "./use-ai-conversation";
 import { ConversationSidebar } from "./conversation-history";
+import { DOCUMENT_ACCEPT, type AgentDocument } from "@/lib/agent-documents";
+import { DocumentAttachments, LedgerProposalCard, WebSources } from "./agent-evidence";
+import { useAgentDocuments } from "./use-agent-documents";
 import "./ai-workspace.css";
 
 export type AiQuestion =
-  | { kind: "chat"; question: string; eventId?: string; pair?: ActivityPair }
+  | { kind: "chat"; question: string; eventId?: string; pair?: ActivityPair; documents?: AgentDocument[]; allowWeb?: boolean }
   | { kind: "review"; question: string; eventId?: string }
   | { kind: "compare"; question: string; baselineId: string; targetId: string };
 
@@ -25,6 +28,8 @@ type AiActions = {
   openRule: (id: string) => void;
   scan: (turn: AiTurn, row: AttendanceRecord, file?: File) => void;
   retry: (turn: AiTurn) => void;
+  applyChanges: (turn: AiTurn) => Promise<void>;
+  cancelChanges: (turn: AiTurn) => void;
 };
 
 const reviewQuestion = "核对签到缺口，判断哪个宣传渠道值得优先复盘。";
@@ -86,6 +91,8 @@ export function AiWorkspace({ turns, threads, selected, select, create, remove, 
   const [formError, setFormError] = useState("");
   const [inspector, setInspector] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [allowWeb, setAllowWeb] = useState(true);
+  const files = useAgentDocuments();
   const [awayFromEnd, setAwayFromEnd] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -103,8 +110,6 @@ export function AiWorkspace({ turns, threads, selected, select, create, remove, 
   const currentTarget = activities.find(({ eventId }) => eventId === (targetId || activityId)) ?? activities[0];
   const defaultBase = previousActivity(activities, currentTarget) ?? activities.find(({ eventId }) => eventId !== currentTarget?.eventId);
   const currentBaseline = activities.find(({ eventId }) => eventId === baselineId && eventId !== currentTarget?.eventId) ?? defaultBase;
-  const pending = lastResult?.kind === "review" ? lastResult.pending : lastResult?.kind === "compare" ? lastResult.action.record : undefined;
-  const attachmentTask = pending && taskTurn?.status === "completed" && taskTurn.revision === revision ? taskTurn : undefined;
   const latestMissing = activities.find(({ rows }) => rows.some(({ attended }) => attended === null));
   const missingCount = activities.reduce((sum, { rows }) => sum + rows.filter(({ attended }) => attended === null).length, 0);
 
@@ -140,11 +145,12 @@ export function AiWorkspace({ turns, threads, selected, select, create, remove, 
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (working || !ready) return;
+    if (working || files.uploading || !ready) return;
     const query = draft.trim();
-    if (query) {
+    if (query || files.documents.length) {
       jumpToEnd();
-      ask({ kind: "chat", question: query, eventId: activityId || undefined,
+      ask({ kind: "chat", question: query || "请读取附件，提取活动和人数信息，指出需要确认的内容。", eventId: activityId || undefined,
+        documents: files.documents.length ? files.documents : undefined, allowWeb,
         pair: kind === "compare" && currentBaseline && currentTarget ? { baselineId: currentBaseline.eventId, targetId: currentTarget.eventId } : undefined });
     } else if (kind === "compare") {
       if (!currentTarget || !currentBaseline) {
@@ -157,10 +163,7 @@ export function AiWorkspace({ turns, threads, selected, select, create, remove, 
     }
     setFormError("");
     setDraft("");
-  }
-
-  function attach(file?: File) {
-    if (file && pending && attachmentTask) actions.scan(attachmentTask, pending, file);
+    files.clear();
   }
 
   return (
@@ -223,7 +226,9 @@ export function AiWorkspace({ turns, threads, selected, select, create, remove, 
 
           <div className="agent-dock">
             {awayFromEnd && <button type="button" className="button secondary small-button agent-jump" onClick={jumpToEnd}><ArrowDown size={15} />回到最新消息</button>}
-            <form className="ai-composer" aria-label="向 AI 提问" onSubmit={submit}>
+            <form className="ai-composer" aria-label="向 AI 提问" onSubmit={submit}
+              onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
+              onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); if (ready && !working) void files.upload([...event.dataTransfer.files]); } }}>
             <div className="ai-composer-head">
               <div className="segmented" role="group" aria-label="分析任务">
                 <button type="button" aria-pressed={kind === "review"} disabled={working} onClick={() => { setKind("review"); setFormError(""); }}>活动复盘</button>
@@ -237,9 +242,12 @@ export function AiWorkspace({ turns, threads, selected, select, create, remove, 
               </div>
               <label className="rules-toggle"><input type="checkbox" checked={useRules} disabled={working} onChange={(event) => setUseRules(event.target.checked)} />应用社团规则</label>
             </div>
+            <DocumentAttachments documents={files.documents} remove={files.uploading ? undefined : files.remove} />
+            {files.uploading && <p className="agent-running muted" role="status"><LoaderCircle size={15} className="spinning" />正在识别 {files.uploading}</p>}
+            {files.error && <p className="form-error" role="alert">{files.error}</p>}
             <label className="sr-only" htmlFor="ai-question">复盘问题</label>
-            <textarea id="ai-question" rows={2} maxLength={300} value={draft} enterKeyHint="send"
-              placeholder="聊聊活动、追问结论，或让我查一下台账…"
+            <textarea id="ai-question" rows={2} maxLength={2000} value={draft} enterKeyHint="send"
+              placeholder="查台账、录入活动，或上传文件让我读取…"
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229 && draft.trim()) {
                   event.preventDefault();
@@ -247,19 +255,20 @@ export function AiWorkspace({ turns, threads, selected, select, create, remove, 
                 }
               }}
               onPaste={(event) => {
-                if (!attachmentTask || !pending) return;
-                const image = [...event.clipboardData.files].find((file) => ["image/png", "image/jpeg"].includes(file.type));
-                if (image) { event.preventDefault(); attach(image); }
+                const pasted = [...event.clipboardData.files];
+                if (pasted.length && ready && !working) { event.preventDefault(); void files.upload(pasted); }
               }}
               onChange={(event) => { setDraft(event.target.value); setFormError(""); }} />
             <div className="ai-composer-actions">
-              {attachmentTask && <label className="button secondary small-button file-button">
-                <Paperclip size={16} />上传签到截图
-                <input type="file" accept="image/png,image/jpeg" onChange={(event) => { attach(event.target.files?.[0]); event.target.value = ""; }} />
-              </label>}
+              <label className="button secondary small-button file-button">
+                <Paperclip size={16} />附件
+                <input type="file" aria-label="上传附件" accept={DOCUMENT_ACCEPT} multiple disabled={!ready || working || !!files.uploading}
+                  onChange={(event) => { const picked = [...(event.target.files ?? [])]; event.target.value = ""; void files.upload(picked); }} />
+              </label>
+              <label className="agent-web-toggle"><input type="checkbox" checked={allowWeb} disabled={working} onChange={(event) => setAllowWeb(event.target.checked)} /><Globe size={14} />联网</label>
               <span className="agent-key-hint">Enter 发送 · Shift+Enter 换行</span>
               {working ? <button type="button" className="button secondary" onClick={stop}><Square size={14} />停止</button> :
-                <button type="submit" className="button primary" disabled={!ready}><ArrowUp size={16} />{draft.trim() ? "发送" : kind === "review" ? "开始 AI 复盘" : "开始 AI 对比"}</button>}
+                <button type="submit" className="button primary" disabled={!ready || !!files.uploading}><ArrowUp size={16} />{draft.trim() || files.documents.length ? "发送" : kind === "review" ? "开始 AI 复盘" : "开始 AI 对比"}</button>}
             </div>
             {formError && <p className="form-error" role="alert">{formError}</p>}
             </form>
@@ -346,7 +355,7 @@ function TurnCard({ turn, stale, actions, current = false, comparePrevious, mode
 
   return (
     <section className="ai-turn" aria-label="对话结果">
-      <div className="agent-user-message"><span>你</span><p className="ai-question">{turn.question}</p></div>
+      <div className="agent-user-message"><span>你</span><p className="ai-question">{turn.question}</p><DocumentAttachments documents={turn.documents} /></div>
       <div className="agent-reply-head">
         <span className="agent-reply-mark"><ChartNoAxesCombined size={16} /></span><strong>复盘助手</strong>
         {modelLabel && (mode === "agent" || (!mode && status === "running")) && <span>{modelLabel}</span>}
@@ -357,6 +366,9 @@ function TurnCard({ turn, stale, actions, current = false, comparePrevious, mode
       {stale && result && result.kind !== "chat" && status !== "running" && <p className="muted">这条结论来自更新前的台账。发送同一问题可按最新数据重算。</p>}
       {status === "running" && !turn.text && <p className="agent-running muted" role="status"><LoaderCircle className="spinning" size={15} />{turn.before ? "正在继续复盘" : "正在处理"}…</p>}
       {(result?.kind === "chat" || turn.text) && <div className="agent-chat-text">{result?.kind === "chat" ? result.text : turn.text}</div>}
+      {result?.kind === "chat" && result.proposal && <LedgerProposalCard turn={turn} proposal={result.proposal} stale={stale}
+        disabled={!canRetry} apply={actions.applyChanges} cancel={actions.cancelChanges} />}
+      {result?.kind === "chat" && <WebSources sources={result.sources} />}
       {note && status !== "running" && <p className="agent-reply-copy">{note}</p>}
       {result && result.kind !== "chat" && <div className="card ai-answer">
         <div className="ai-answer-heading">
