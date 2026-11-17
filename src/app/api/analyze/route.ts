@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 export const maxDuration = 120;
 
 const common = {
-  question: z.string().trim().min(1).max(2000),
+  question: z.string().trim().min(1).max(8000),
   rows: recordsSchema,
   useRules: z.boolean(),
   context: z.string().max(1800).optional(),

@@ -288,6 +288,17 @@ export function ReviewApp({ modelConfigured, modelLabel, visionConfigured = mode
     setNotice(`已确认写入 ${proposal.changes.length} 条活动渠道记录。`);
   }
 
+  function answerAiQuestions(turn: AiTurn, answers: string[]) {
+    const result = turn.result;
+    if (result?.kind !== "chat" || !result.pendingQuestions || turn.questionAnswers) return;
+    conversation.resolveQuestions(turn, answers);
+    const question = ["请根据我对你刚才问题的回答继续处理：", ...result.pendingQuestions.map((prompt, index) =>
+      `${index + 1}. ${prompt}\n回答：${answers[index]}`)].join("\n\n");
+    askAi({ kind: "chat", question,
+      eventId: turn.request.kind === "chat" ? turn.request.eventId : undefined,
+      allowWeb: turn.request.kind === "chat" ? turn.request.allowWeb : undefined });
+  }
+
   async function saveActivity(mode: ActivityEditorMode, record: AttendanceRecord) {
     if (mode === "create" && activities.some(({ eventId }) => eventId === record.eventId)) {
       throw new Error("此活动编号已存在，请换一个编号。");
@@ -411,7 +422,7 @@ export function ReviewApp({ modelConfigured, modelLabel, visionConfigured = mode
               revision={dataset.revision} ready={ready && conversation.loaded}
               useRules={useRules} setUseRules={(value) => { clearAnalysis(); setUseRules(value); }} ask={askAi} stop={() => conversation.stop()}
               actions={{ openActivity, openEvidence: openAiEvidence, openReport: applyRun, openRule, scan: scanForTask, retry: retryAi,
-                applyChanges: applyAiChanges, cancelChanges: (turn) => conversation.resolveProposal(turn, "cancelled") }} />}
+                applyChanges: applyAiChanges, cancelChanges: (turn) => conversation.resolveProposal(turn, "cancelled"), answerQuestions: answerAiQuestions }} />}
 
             {view === "visual" && (
               <VisualDashboard report={report} theme={theme} evidence={openEvidence}>

@@ -30,6 +30,7 @@ type AiActions = {
   retry: (turn: AiTurn) => void;
   applyChanges: (turn: AiTurn) => Promise<void>;
   cancelChanges: (turn: AiTurn) => void;
+  answerQuestions: (turn: AiTurn, answers: string[]) => void;
 };
 
 const reviewQuestion = "核对签到缺口，判断哪个宣传渠道值得优先复盘。";
@@ -372,6 +373,8 @@ function TurnCard({ turn, stale, actions, current = false, comparePrevious, mode
       {(result?.kind === "chat" || turn.text) && <div className="agent-chat-text">{result?.kind === "chat" ? result.text : turn.text}</div>}
       {result?.kind === "chat" && result.proposal && <LedgerProposalCard turn={turn} proposal={result.proposal} stale={stale}
         disabled={!canRetry} apply={actions.applyChanges} cancel={actions.cancelChanges} />}
+      {result?.kind === "chat" && !!result.pendingQuestions?.length && <ClarificationCard turn={turn} questions={result.pendingQuestions}
+        answers={turn.questionAnswers} disabled={!canRetry} submit={(answers) => actions.answerQuestions(turn, answers)} />}
       {result?.kind === "chat" && <WebSources sources={result.sources} />}
       {note && status !== "running" && <p className="agent-reply-copy">{note}</p>}
       {result && result.kind !== "chat" && <div className="card ai-answer">
@@ -390,6 +393,47 @@ function TurnCard({ turn, stale, actions, current = false, comparePrevious, mode
         {canRetry && <button type="button" className="link-button" onClick={() => actions.retry(turn)}><RotateCcw size={15} />重新运行</button>}
         {copyStatus && <span role="status">{copyStatus}</span>}
       </div>}
+    </section>
+  );
+}
+
+function ClarificationCard({ turn, questions, answers, disabled, submit }: {
+  turn: AiTurn;
+  questions: string[];
+  answers?: string[];
+  disabled: boolean;
+  submit: (answers: string[]) => void;
+}) {
+  const [values, setValues] = useState(() => questions.map(() => ""));
+  const [error, setError] = useState("");
+  function send(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const cleaned = values.map((value) => value.trim());
+    if (cleaned.some((value) => !value)) {
+      setError("请回答全部问题后继续。");
+      return;
+    }
+    setError("");
+    submit(cleaned);
+  }
+
+  return (
+    <section className="agent-clarification" aria-labelledby={`clarification-${turn.id}`}>
+      <div className="agent-clarification-heading">
+        <div><strong id={`clarification-${turn.id}`}>需要你补充 {questions.length} 项信息</strong><span>回答后，AI 会在当前对话里继续处理</span></div>
+        <span className="pill neutral">{answers ? "回答已发送" : "待回答"}</span>
+      </div>
+      {answers ? <ol className="agent-clarification-answers">{questions.map((question, index) => <li key={`${question}-${index}`}>
+        <span>{question}</span><strong>{answers[index] || "—"}</strong>
+      </li>)}</ol> : <form className="agent-clarification-form" onSubmit={send}>
+        {questions.map((question, index) => <label key={`${question}-${index}`}>
+          <span><b>{index + 1}</b>{question}</span>
+          <textarea rows={2} maxLength={500} required disabled={disabled} value={values[index] ?? ""}
+            onChange={(event) => setValues((current) => current.map((value, item) => item === index ? event.target.value : value))} />
+        </label>)}
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <button className="button primary small-button" type="submit" disabled={disabled}><ArrowUp size={15} />发送回答并继续</button>
+      </form>}
     </section>
   );
 }

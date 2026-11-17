@@ -12,6 +12,20 @@ import type { WebSource } from "../agent-documents";
 import { observeAgentTools } from "./agent-trace";
 import { workspaceTools } from "./workspace-tools";
 
+function clarificationFromReply(value: string) {
+  if (!/(?:还需要|缺少|请(?:先)?(?:告诉|提供|补充|确认|回答)|逐项|信息齐全|需要.*(?:信息|资料|确认))/u.test(value)) return [];
+  const numbered = [...value.matchAll(/(?:^|\s)\d{1,2}[.、)）]\s*([\s\S]*?)(?=(?:\s+\d{1,2}[.、)）]\s*)|$)/gu)]
+    .map((match) => match[1]);
+  const bulleted = [...value.matchAll(/(?:^|\s)[-•]\s*([^-•\n]+?)(?=(?:\s+[-•]\s*)|$)/gu)].map((match) => match[1]);
+  const candidates = numbered.length ? numbered : bulleted.length ? bulleted : value.match(/[^。！？!?\n]+[？?]/gu) ?? [];
+  const questions = [...new Set(candidates.map((question) => question
+    .replace(/^\s*(?:活动|资料)?(?:还需要|需要|请先|请补充|请提供|请确认)?\s*[:：]?\s*/u, "")
+    .replace(/(?:请逐项告诉我.*|信息齐全后.*|请.*再.*)$/u, "")
+    .replace(/[\s，,；;。！？?]+$/u, "").trim())
+    .filter((question) => question.length >= 2))].slice(0, 10);
+  return questions.length ? questions : undefined;
+}
+
 export async function runConversationAgent(
   input: ChatInput, config: ModelConfig, signal: AbortSignal,
   onStep: (step: AnalysisStep) => void, onText: (delta: string) => void,
@@ -19,6 +33,7 @@ export async function runConversationAgent(
   const activities = listActivities(input.rows);
   let analysis: AnalysisResponse | undefined;
   let proposal: LedgerProposal | undefined;
+  let pendingQuestions: string[] | undefined;
   const sources = new Map<string, WebSource>();
   let text = "";
   const result = streamText({
@@ -28,6 +43,7 @@ export async function runConversationAgent(
       "先理解本轮意图。打招呼、致谢、自我介绍、偏好、记忆询问、对已有结论的解释直接回复，不调用统计工具，不主动发起复盘。",
       "你能看到当前会话的历史消息，可据此记住用户称呼、社团、偏好和前文。没有提供的信息不要编造。用户纠正时采用新信息。",
       "用户要求复盘时调用 review_activity；明确比较两场活动时调用 compare_activity_pair。只查看活动信息或修改前核对原始数据用 read_activity_data。每轮最多执行一个复盘或变更任务。",
+      "如果缺少继续处理所需的信息，或活动归属、日期、渠道、人数存在歧义，必须调用 ask_user 一次集中询问当前能预见的所有问题，最多10个。不得把问题清单直接写在普通回复里，也不得要求用户在聊天框里逐项回答。问题应具体、简短、互不重复。工具返回后等待用户通过界面回答，不要猜测或提前写入台账。信息足够时不要多问。",
       "回答新的具体台账数值必须查工具，不能把旧结论当最新数据。解释历史结论、讨论建议时可直接回答并说明是基于前文。",
       "当前选择只帮助理解‘这场’和‘这两场’，不等于要求执行任务。用户点名的活动优先于当前选择；目标不明确时先询问。",
       "工具 question 要保留本轮完整意图及追问指代。单场活动用 eventId；全部活动用 allActivities=true。比较用真实活动编号，基准在前对照在后。",
@@ -48,6 +64,14 @@ export async function runConversationAgent(
     messages: [...(input.history ?? []), { role: "user", content: input.question }],
     tools: {
       ...workspaceTools(input, config, signal, { getProposal: () => proposal, setProposal: (next) => { proposal = next; }, sources }),
+      ask_user: tool({
+        description: "需要用户补充信息或消除歧义时，集中提出一组澄清问题。最多10个；调用后等待用户逐项回答，再继续任务。",
+        inputSchema: z.object({ questions: z.array(z.string().trim().min(2).max(300)).min(1).max(10) }),
+        execute: ({ questions }) => {
+          pendingQuestions = [...new Set(questions.map((question) => question.trim()))].slice(0, 10);
+          return { status: "waiting_for_user", questions: pendingQuestions };
+        },
+      }),
       review_activity: tool({
         description: "查询统计或复盘活动台账，包括签到缺口和渠道表现。普通聊天不使用。",
         inputSchema: z.object({ question: z.string().min(1).max(600), eventId: z.string().optional(), allActivities: z.boolean().optional() }),
@@ -78,7 +102,7 @@ export async function runConversationAgent(
       }),
     },
     ...observeAgentTools(onStep),
-    stopWhen: [isStepCount(8), () => analysis !== undefined || proposal !== undefined],
+    stopWhen: [isStepCount(8), () => analysis !== undefined || proposal !== undefined || pendingQuestions !== undefined],
     maxOutputTokens: 3000,
     maxRetries: 0,
     abortSignal: signal,
@@ -88,7 +112,10 @@ export async function runConversationAgent(
     if (event.type === "error") throw event.error;
     if (event.type === "tool-error") throw event.error;
   }
+  if (!pendingQuestions) pendingQuestions = clarificationFromReply(text);
+  if (!pendingQuestions?.length) pendingQuestions = undefined;
   if (analysis && !proposal) return analysis;
-  if (!text.trim() && !proposal) throw new Error("模型未返回回复，请重试。");
-  return { kind: "chat", mode: "agent", text: text.trim() || "请核对以下变更，确认后写入台账。", proposal, sources: [...sources.values()].slice(0, 12) };
+  if (!text.trim() && !proposal && !pendingQuestions) throw new Error("模型未返回回复，请重试。");
+  return { kind: "chat", mode: "agent", text: pendingQuestions ? "请在下面回答，我会根据你的信息继续处理。" : text.trim() || "请核对以下变更，确认后写入台账。",
+    proposal, pendingQuestions, sources: [...sources.values()].slice(0, 12) };
 }

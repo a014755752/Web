@@ -28,6 +28,7 @@ export type AiTurn = {
   steps: AnalysisStep[];
   text?: string;
   documents?: AgentDocument[];
+  questionAnswers?: string[];
   result?: TurnResult;
   before?: ReviewResult;
   warning?: string;
@@ -106,6 +107,7 @@ function promptContext(turns: AiTurn[], revision: number) {
     const result = turn.result;
     if (turn.status !== "completed" || !result) continue;
     const content = result.kind === "chat" ? [result.text.slice(0, 6000),
+      result.pendingQuestions?.map((question, index) => `${index + 1}. ${question}`).join("\n"),
       result.proposal ? `台账变更状态：${result.proposal.status === "applied" ? "用户已确认，已实际保存" : result.proposal.status === "cancelled" ? "已取消，没有保存" : "等待确认，尚未保存"}。${result.proposal.title}。\n` +
         result.proposal.changes.slice(0, 5).map(({ after }) => `${after.eventId} ${after.eventName}，${after.date}，${after.category}，${after.channel}，报名 ${after.registered}，实到 ${after.attended ?? "未知"}`).join("\n") : "",
       result.sources?.slice(0, 5).map(({ title, url }) => `${title.slice(0, 100)} ${url.slice(0, 500)}`).join("\n"),
@@ -289,6 +291,12 @@ export function useAiConversation(modelConfigured: boolean) {
     } : current);
   }
 
+  function resolveQuestions(turn: AiTurn, answers: string[]) {
+    update(selectedId, turn.id, (current) => current.result?.kind === "chat" && current.result.pendingQuestions ? {
+      ...current, questionAnswers: answers,
+    } : current);
+  }
+
   async function remove(id: string) {
     if (removing.current.has(id) || !currentThreads.current.some((thread) => thread.id === id)) return false;
     removing.current.add(id);
@@ -313,6 +321,6 @@ export function useAiConversation(modelConfigured: boolean) {
 
   return {
     threads: [...threads].sort((a, b) => b.updatedAt - a.updatedAt), selectedId, turns: currentThread?.turns ?? [],
-    select: setSelectedId, create, remove, loaded, storageWarning, execute, resume, resolveProposal, stop, stopAll,
+    select: setSelectedId, create, remove, loaded, storageWarning, execute, resume, resolveProposal, resolveQuestions, stop, stopAll,
   };
 }

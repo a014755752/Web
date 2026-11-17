@@ -19,6 +19,7 @@ const toolLabels: Record<string, string> = {
   update_activities: "准备修改活动",
   search_web: "搜索网页",
   fetch_webpage: "阅读网页",
+  ask_user: "向你确认信息",
   review_activity: "执行活动复盘",
   compare_activity_pair: "执行两场对比",
 };
@@ -54,6 +55,7 @@ function summary(key: string, output: Record<string, unknown>) {
   if (key === "read_activity_data") return `${output.total ?? 0} 条匹配记录`;
   if (key === "read_document") return `${output.name ?? "文件"} · ${output.pageCount ?? 0} 页`;
   if (key === "search_web") return `${Array.isArray(output.results) ? output.results.length : 0} 个网页来源`;
+  if (key === "ask_user") return `${Array.isArray(output.questions) ? output.questions.length : 0} 个待回答问题`;
   return String(output.title ?? output.label ?? output.key ?? "已返回执行结果");
 }
 

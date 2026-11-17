@@ -17,7 +17,10 @@ export type ChatInput = {
   allowWeb?: boolean;
 };
 
-export type ChatRun = { kind: "chat"; mode: "local" | "agent"; text: string; sources?: WebSource[]; proposal?: LedgerProposal };
+export type ChatRun = {
+  kind: "chat"; mode: "local" | "agent"; text: string; sources?: WebSource[];
+  proposal?: LedgerProposal; pendingQuestions?: string[];
+};
 
 export function greetingReply(question: string) {
   const greeting = question.normalize("NFKC").trim();
